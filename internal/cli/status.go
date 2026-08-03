@@ -56,6 +56,11 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString("format")
 	timeout, _ := cmd.Flags().GetInt("timeout")
 
+	_, cfg, err := requireConfig(cmd)
+	if err != nil {
+		return err
+	}
+
 	// Initialize logger (using config)
 	logger, err := initLogger(cfg.LogLevel, cfg.LogFormat)
 	if err != nil {

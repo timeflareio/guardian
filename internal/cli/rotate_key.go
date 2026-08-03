@@ -64,10 +64,11 @@ the new epoch and reloads, but a restart makes the cutover immediate).`,
 }
 
 func runRotateKey(cmd *cobra.Command, args []string) error {
-	if err := cfgManager.Load(); err != nil {
+	manager, _, err := requireConfig(cmd)
+	if err != nil {
 		return err
 	}
-	effective := cfgManager.GetConfig()
+	effective := manager.GetConfig()
 
 	backupOutput, _ := cmd.Flags().GetString("backup-output")
 	backupPassphraseFile, _ := cmd.Flags().GetString("backup-passphrase-file")
@@ -131,7 +132,7 @@ func runRotateKey(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	fingerprint := ""
-	if configBytes, err := os.ReadFile(cfgManager.GetConfigPath()); err == nil {
+	if configBytes, err := os.ReadFile(manager.GetConfigPath()); err == nil {
 		sum := sha256.Sum256(configBytes)
 		fingerprint = hex.EncodeToString(sum[:])
 	}
@@ -262,10 +263,10 @@ func runRotateKey(cmd *cobra.Command, args []string) error {
 	if err := os.WriteFile(publicKeyPath, []byte(newPubHex), 0644); err != nil { //nolint:gosec // public key
 		printWarning("Failed to refresh %s: %v", publicKeyPath, err)
 	}
-	if err := cfgManager.SetWithoutValidation("encryption_public_key", newPubHex); err != nil {
+	if err := manager.SetWithoutValidation("encryption_public_key", newPubHex); err != nil {
 		return err
 	}
-	if err := cfgManager.Save(); err != nil {
+	if err := manager.Save(); err != nil {
 		return errors.Wrap(err, "failed to save config")
 	}
 

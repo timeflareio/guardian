@@ -31,56 +31,58 @@ The service will:
 The service runs continuously until stopped with Ctrl+C or a shutdown signal.
 The guardian must be registered before starting the service.
 
-Available Options:
-  --accept              Skip confirmation prompt and start immediately
-  --startup-timeout     Timeout for service startup (default: 30 seconds)
-  --config-path         Use custom configuration file path
-
-Global Options (inherited):
-  --config-path         Path to configuration file (default: ~/.timeflare/guardian/config.yaml)`,
+Configuration comes from the file, GUARDIAN_* environment variables, and the
+flags below, in that order of increasing precedence.`,
 		Example: `  # Start guardian service (requires prior registration)
   guardiand start
 
-  # Start with auto-acceptance (no confirmation prompt)
-  guardiand start --accept
-
-  # Start with custom startup timeout
-  guardiand start --startup-timeout 60
-
-  # Start with custom configuration file
+  # Start with a custom configuration file
   guardiand --config-path /path/to/guardian.yaml start
 
-  # Start with all options
-  guardiand --config-path /custom/config.yaml start --accept --startup-timeout 45
+  # Override configured values for this run
+  guardiand start --log-level debug --rpc-endpoint http://node:26657
 
   # Register guardian first if not already registered
-  guardiand register && guardiand start --accept`,
+  guardiand register && guardiand start`,
 		RunE: runStart,
 	}
 
 	// Command-specific flags
 	cmd.Flags().Int("startup-timeout", 30, "startup timeout in seconds")
-	cmd.Flags().Bool("accept", false, "automatically accept configuration and start service without prompting")
+
+	// Accepted and ignored. The service no longer prompts, so there is nothing
+	// to accept — but the chain repository's devnet scripts pass this flag on
+	// every guardian start, and an unknown-flag error there would be a
+	// cross-repository break for a flag that costs nothing to tolerate. It is
+	// removed once those invocations have dropped it.
+	cmd.Flags().Bool("accept", false, "")
+	_ = cmd.Flags().MarkHidden("accept")
+
+	// Runtime overrides. The registry supplies the flag name and the
+	// documentation, so a configuration field becomes overridable by being
+	// named here — see bindConfigFlags.
+	bindConfigFlags(cmd,
+		"chain_id", "rpc_endpoint", "grpc_endpoint",
+		"log_level", "log_format",
+		"bind_address", "metrics_port", "health_port", "dashboard_port",
+		"polling_interval",
+	)
 
 	return cmd
 }
 
 func runStart(cmd *cobra.Command, args []string) error {
-	// Check if config exists - if not, prompt to run config init
-	if !configExists() {
-		ShowNoConfigMessage(cfgManager.GetConfigPath())
-		return nil
+	manager, cfg, err := requireConfig(cmd)
+	if err != nil {
+		return err
 	}
 
-	// Check if we should skip confirmation
-	accept, _ := cmd.Flags().GetBool("accept")
-
-	// Show configuration and get confirmation (unless --accept flag is used)
-	if !showStartConfigAndConfirm(cfg, accept) {
-		printWarning("Service startup cancelled.")
-		printEmptyLine()
-		return nil
-	}
+	// Report the configuration this run will use, then start. There is no
+	// confirmation prompt: a service under a process supervisor has no terminal
+	// to answer one at, so the prompt was not a safety feature but a startup
+	// failure waiting for a host without a TTY — and because a declined prompt
+	// returned nil, the failure exited zero.
+	showStartConfig(cfg, manager.GetConfigPath())
 
 	// Initialize logger
 	logger, err := initLogger(cfg.LogLevel, cfg.LogFormat)
@@ -119,7 +121,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// The read-only operator dashboard: the daemon supplies the data, the
 	// monitoring service owns the listener. Build info comes from here because
 	// only the command knows the resolved config path and the binary's version.
-	guardianService.SetBuildInfo(buildVersion(), cfgManager.GetConfigPath())
+	guardianService.SetBuildInfo(buildVersion(), manager.GetConfigPath())
 	monitoringService.SetDashboardSource(guardianService)
 
 	// Pre-flight: chain reachable, guardian registered, and the local share
@@ -227,15 +229,10 @@ func initLogger(level, format string) (*zap.Logger, error) {
 	return config.Build()
 }
 
-// configExists checks if the configuration file exists
-func configExists() bool {
-	configPath := cfgManager.GetConfigPath()
-	_, err := os.Stat(configPath)
-	return err == nil
-}
-
-// showStartConfigAndConfirm displays the service configuration and asks for confirmation
-func showStartConfigAndConfirm(config *config.Config, autoAccept bool) bool {
+// showStartConfig reports the configuration this run resolved to — file plus
+// environment plus flags — so a container log records what the service actually
+// started with rather than what its file says.
+func showStartConfig(config *config.Config, configPath string) {
 	printEmptyLine()
 	printSeparator("🚀 Guardian Service Configuration")
 	printEmptyLine()
@@ -288,18 +285,9 @@ func showStartConfigAndConfirm(config *config.Config, autoAccept bool) bool {
 	// Config file path
 	printText(indent1)
 	printKey("%-18s", "Config File:")
-	printPath("%s\n", cfgManager.GetConfigPath())
+	printPath("%s\n", configPath)
 
 	printEmptyLine()
 	printNote("Starting guardian service with the above configuration.")
 	printEmptyLine()
-
-	// Skip confirmation if autoAccept is true
-	if autoAccept {
-		printSuccess("Auto-accepting configuration (--accept flag provided)")
-		printEmptyLine()
-		return true
-	}
-
-	return promptForConfirmation("🔄 Proceed with service startup?")
 }

@@ -91,6 +91,31 @@ func Keys() []string {
 	return keys
 }
 
+// FieldInfo is what a caller needs to expose one configuration parameter as a
+// command-line flag: the canonical key to set, the kebab-case name to spell the
+// flag, and the description to document it. Handing this out rather than the
+// FieldSpec keeps the registry's reflection details private while letting the
+// flag layer be generic — a field gains a flag by being named, not by having
+// binding code written for it.
+type FieldInfo struct {
+	Key         string
+	FlagName    string
+	Description string
+}
+
+// LookupField resolves a key (canonical or kebab form) to its flag metadata.
+func LookupField(key string) (FieldInfo, bool) {
+	spec := findFieldSpec(key)
+	if spec == nil {
+		return FieldInfo{}, false
+	}
+	return FieldInfo{
+		Key:         spec.Key,
+		FlagName:    spec.AltKey,
+		Description: spec.Description,
+	}, true
+}
+
 // GetField returns the string form of a config field.
 func (cfg *Config) GetField(key string) (string, error) {
 	spec := findFieldSpec(key)

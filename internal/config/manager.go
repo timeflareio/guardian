@@ -34,6 +34,15 @@ func DefaultConfigPath() string {
 	return expandPath(DefaultConfigRelativePath)
 }
 
+// Exists reports whether the configuration file is present. Commands use this
+// to tell "no configuration yet" from "configuration is broken" — the two want
+// different messages, and only the first is an operator's next step rather than
+// a fault.
+func (m *Manager) Exists() bool {
+	_, err := os.Stat(m.configPath)
+	return err == nil
+}
+
 // Load loads configuration from file, returns error if file doesn't exist.
 // Environment overrides (GUARDIAN_*) are applied on top of the file values.
 func (m *Manager) Load() error {

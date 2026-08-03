@@ -40,6 +40,12 @@ func runHealth(cmd *cobra.Command, args []string) error {
 	timeout, _ := cmd.Flags().GetInt("timeout")
 
 	if url == "" {
+		// Only the default URL needs the configuration, so --url alone is
+		// enough to check a guardian from a host that has none.
+		_, cfg, err := optionalConfig(cmd)
+		if err != nil {
+			return err
+		}
 		url = fmt.Sprintf("http://localhost:%d", cfg.HealthPort)
 	}
 

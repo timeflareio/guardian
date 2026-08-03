@@ -1,13 +1,13 @@
 package cli
 
 import (
-	"os"
 	"strconv"
 
 	"github.com/fatih/color"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	secretstypes "github.com/timeflareio/chain/x/secrets/types"
+	"github.com/timeflareio/guardian/internal/config"
 	"github.com/timeflareio/guardian/internal/guardian"
 )
 
@@ -61,11 +61,9 @@ Note: Uses encryption public key from configuration file.`,
 }
 
 func runRegister(cmd *cobra.Command, args []string) error {
-	// Check if config exists first (before parameter validation)
-	configPath := cfgManager.GetConfigPath()
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		ShowNoConfigMessage(configPath)
-		return nil
+	_, cfg, err := requireConfig(cmd)
+	if err != nil {
+		return err
 	}
 
 	// Flags override config defaults
@@ -113,7 +111,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show the registration and either execute or bail
-	if !autoAccept && !showRegistrationAndConfirm(guardianAddress, stakeAmount, availableFrom, availableUntil, acceptingSecrets) {
+	if !autoAccept && !showRegistrationAndConfirm(cfg, guardianAddress, stakeAmount, availableFrom, availableUntil, acceptingSecrets) {
 		printNote("Registration cancelled.")
 		printEmptyLine()
 		return nil
@@ -139,13 +137,13 @@ func runRegister(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(err, "registration failed")
 	}
 
-	showRegistrationSuccess(availableFrom, availableUntil, acceptingSecrets)
+	showRegistrationSuccess(cfg, availableFrom, availableUntil, acceptingSecrets)
 	return nil
 }
 
 // showRegistrationAndConfirm displays the registration parameters and asks
 // for confirmation before the transaction is signed and broadcast.
-func showRegistrationAndConfirm(guardianAddress, stakeAmount string, availableFrom, availableUntil int64, acceptingSecrets bool) bool {
+func showRegistrationAndConfirm(cfg *config.Config, guardianAddress, stakeAmount string, availableFrom, availableUntil int64, acceptingSecrets bool) bool {
 	blockSeconds := cfg.BlockTime.Seconds()
 
 	printEmptyLine()
@@ -196,7 +194,7 @@ func showRegistrationAndConfirm(guardianAddress, stakeAmount string, availableFr
 }
 
 // showRegistrationSuccess displays success message and next steps
-func showRegistrationSuccess(availableFrom, availableUntil int64, acceptingSecrets bool) {
+func showRegistrationSuccess(cfg *config.Config, availableFrom, availableUntil int64, acceptingSecrets bool) {
 	headerColor := color.New(color.FgGreen, color.Bold)
 	sectionColor := color.New(color.FgYellow, color.Bold)
 	commandColor := color.New(color.FgGreen, color.Bold)

@@ -73,9 +73,9 @@ func readPasswordInput() ([]byte, error) {
 }
 
 // ensureGuardianDirectory creates the guardian directory if it doesn't exist
-func ensureGuardianDirectory() error {
+func ensureGuardianDirectory(manager *config.Manager) error {
 	// Use the config manager to get the correct key directory
-	return cfgManager.EnsureDirectoriesExist()
+	return manager.EnsureDirectoriesExist()
 }
 
 // stripAnsiCodes removes ANSI color codes for accurate length calculation
@@ -84,8 +84,8 @@ func stripAnsiCodes(s string) string {
 	return ansiRegex.ReplaceAllString(s, "")
 }
 
-// ShowNoConfigMessage displays a consistent "no configuration found" message
-func ShowNoConfigMessage(configPath string) {
+// showNoConfigMessage displays a consistent "no configuration found" message
+func showNoConfigMessage(configPath string) {
 	printEmptyLine()
 	printSeparator("No Configuration Found!")
 	printEmptyLine()
@@ -157,10 +157,11 @@ func NewConfigDoctorCmd() *cobra.Command {
 }
 
 func runConfigDoctor(cmd *cobra.Command, args []string) error {
-	if err := cfgManager.Load(); err != nil {
+	manager, _, err := requireConfig(cmd)
+	if err != nil {
 		return err
 	}
-	effective := cfgManager.GetConfig()
+	effective := manager.GetConfig()
 
 	printEmptyLine()
 	printSeparator("🩺 Guardian Configuration Doctor")
@@ -169,7 +170,7 @@ func runConfigDoctor(cmd *cobra.Command, args []string) error {
 	printEmptyLine()
 
 	for _, group := range config.GroupOrder() {
-		items := cfgManager.ListAllGrouped()[group]
+		items := manager.ListAllGrouped()[group]
 		keys := make([]string, 0, len(items))
 		for key := range items {
 			keys = append(keys, key)
@@ -227,38 +228,27 @@ func runConfigDoctor(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// runConfigHelp shows help and checks if config exists
+// runConfigHelp shows help and checks if config exists. It resolves its own
+// manager rather than requiring one: the whole point of this command is to be
+// useful on a host that has no configuration yet.
 func runConfigHelp(cmd *cobra.Command, args []string) error {
-	// Check if config file exists (either custom path or standard paths)
-	configPath := cfgManager.GetConfigPath()
+	manager := newManager(cmd)
+	configPath := manager.GetConfigPath()
 
-	if !cmd.Flags().Changed("config-path") {
-		// No custom path specified, check for standard config
-		standardPath := config.DefaultConfigPath()
-
-		if _, err := os.Stat(standardPath); os.IsNotExist(err) {
-			// No config exists, show setup prompt only (no help)
-			ShowNoConfigMessage(standardPath)
-			return nil
-		} else {
-			// Show existing config
-			printEmptyLine()
-			printNote("Configuration found:")
-			printText(indent1 + "✓ Config: ")
-			printCommand("%s\n", standardPath)
-			printEmptyLine()
-			printText(indent1 + "Use: ")
-			printCommand("guardiand config list")
-			printEmptyLine()
-			printEmptyLine()
-		}
-	} else {
-		// Custom config path specified
-		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			ShowNoConfigMessage(configPath)
-			return nil
-		}
+	if !manager.Exists() {
+		showNoConfigMessage(configPath)
+		return nil
 	}
+
+	printEmptyLine()
+	printNote("Configuration found:")
+	printText(indent1 + "✓ Config: ")
+	printCommand("%s\n", configPath)
+	printEmptyLine()
+	printText(indent1 + "Use: ")
+	printCommand("guardiand config list")
+	printEmptyLine()
+	printEmptyLine()
 
 	// Show normal help
 	return cmd.Help()
@@ -398,19 +388,11 @@ This checks:
 }
 
 func runConfigInit(cmd *cobra.Command, args []string) error {
-
-	// Determine config path
-	var configPath string
-
-	if cmd.Flags().Changed("config-path") {
-		// Custom config path provided, use it directly
-		configPath = cfgManager.GetConfigPath()
-	} else {
-		// Use standard config path
-		configPath = config.DefaultConfigPath()
-		// Create new config manager with standard path
-		cfgManager = config.NewManager(configPath)
-	}
+	// Resolve the target path once, up front. This used to replace a
+	// package-level manager part-way through, leaving the process holding two
+	// views of the configuration that could disagree.
+	manager := newManager(cmd)
+	configPath := manager.GetConfigPath()
 
 	// Check if config file already exists
 	if _, err := os.Stat(configPath); err == nil {
@@ -555,7 +537,7 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 			printStep(indent1 + "🔍 Resolving guardian address from key...")
 		}
 
-		guardianAddress = resolveAddressWithPassword(keyName, keyringBackend, passphraseForFile, flagKeyringDir)
+		guardianAddress = resolveAddressWithPassword(manager, keyName, keyringBackend, passphraseForFile, flagKeyringDir)
 
 		// For flag-based setup, address resolution is required
 		if !needsInteractive && guardianAddress == "" {
@@ -588,11 +570,11 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		// Auto-generate keys in flag mode (encrypted at rest, passphrase from
 		// the required flag)
 		var err error
-		encryptionKey, err = runCreateEncryptionKey(flagEncKeyPassphrase)
+		encryptionKey, err = runCreateEncryptionKey(manager, flagEncKeyPassphrase)
 		if err != nil {
 			return errors.Wrap(err, "auto key generation failed")
 		}
-		if err := writeEncryptionKeyPassphraseFile(flagEncKeyPassphrase); err != nil {
+		if err := writeEncryptionKeyPassphraseFile(manager, flagEncKeyPassphrase); err != nil {
 			return errors.Wrap(err, "failed to store share-key passphrase file")
 		}
 		if needsInteractive {
@@ -625,19 +607,19 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 
 			printTextLn("\n" + indent1 + "⚡ Generating encryption keys...")
 
-			encryptionKey, err = runCreateEncryptionKey(passphrase)
+			encryptionKey, err = runCreateEncryptionKey(manager, passphrase)
 			if err != nil {
 				printWarning("Key generation failed: %v", err)
 				printNote(indent1 + "You can set the encryption key later with:" + indent1)
 				printCommand("guardiand config set encryption-public-key <64-hex-chars>\n\n")
 				encryptionKey = "" // Continue without key
 			} else {
-				if err := writeEncryptionKeyPassphraseFile(passphrase); err != nil {
+				if err := writeEncryptionKeyPassphraseFile(manager, passphrase); err != nil {
 					return errors.Wrap(err, "failed to store share-key passphrase file")
 				}
 				printSuccess("Encryption keys generated successfully!")
-				privateKeyPath := cfgManager.GetPrivateKeyPath()
-				publicKeyPath := cfgManager.GetPublicKeyPath()
+				privateKeyPath := manager.GetPrivateKeyPath()
+				publicKeyPath := manager.GetPublicKeyPath()
 				printTextLn(indent1 + "📁 Key locations:")
 				printTextLn(indent2 + "• Private key: " + privateKeyPath + " (encrypted at rest — keep it SECRET!)")
 				printTextLn(indent2 + "• Passphrase:  " + custody.SiblingPassphrasePath(privateKeyPath))
@@ -672,46 +654,46 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 
 	// Set the user-provided values using the config manager
 	if encryptionKey != "" {
-		if err := cfgManager.SetWithoutValidation("encryption_public_key", encryptionKey); err != nil {
+		if err := manager.SetWithoutValidation("encryption_public_key", encryptionKey); err != nil {
 			return errors.Wrap(err, "failed to set encryption key")
 		}
 		// Set the private key path using config-derived path
-		privateKeyPath := cfgManager.GetPrivateKeyPath()
-		if err := cfgManager.SetWithoutValidation("encryption_private_key_path", privateKeyPath); err != nil {
+		privateKeyPath := manager.GetPrivateKeyPath()
+		if err := manager.SetWithoutValidation("encryption_private_key_path", privateKeyPath); err != nil {
 			return errors.Wrap(err, "failed to set encryption private key path")
 		}
 	}
-	if err := cfgManager.SetWithoutValidation("guardian_id", guardianID); err != nil {
+	if err := manager.SetWithoutValidation("guardian_id", guardianID); err != nil {
 		return errors.Wrap(err, "failed to set guardian ID")
 	}
-	if err := cfgManager.SetWithoutValidation("key_name", keyName); err != nil {
+	if err := manager.SetWithoutValidation("key_name", keyName); err != nil {
 		return errors.Wrap(err, "failed to set key name")
 	}
-	if err := cfgManager.SetWithoutValidation("keyring_backend", keyringBackend); err != nil {
+	if err := manager.SetWithoutValidation("keyring_backend", keyringBackend); err != nil {
 		return errors.Wrap(err, "failed to set keyring backend")
 	}
 
 	// Set keyring directory if provided (optional flag)
 	if flagKeyringDir != "" {
-		if err := cfgManager.SetWithoutValidation("keyring_dir", flagKeyringDir); err != nil {
+		if err := manager.SetWithoutValidation("keyring_dir", flagKeyringDir); err != nil {
 			return errors.Wrap(err, "failed to set keyring directory")
 		}
 	}
 
 	// Set the guardian address if we resolved it earlier
 	if guardianAddress != "" {
-		if err := cfgManager.SetWithoutValidation("guardian_address", guardianAddress); err != nil {
+		if err := manager.SetWithoutValidation("guardian_address", guardianAddress); err != nil {
 			return errors.Wrap(err, "failed to set guardian address")
 		}
 	}
 
 	// Write passphrase file now that all steps are complete
 	if passphraseForFile != "" {
-		keyDir := cfgManager.GetKeyDirectory()
+		keyDir := manager.GetKeyDirectory()
 		passphraseFile := filepath.Join(keyDir, "keyring_passphrase")
 
 		// Ensure directory exists
-		if err := ensureGuardianDirectory(); err != nil {
+		if err := ensureGuardianDirectory(manager); err != nil {
 			return errors.Wrap(err, "failed to create guardian directory")
 		}
 
@@ -719,13 +701,13 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 			return errors.Wrap(err, "failed to create passphrase file")
 		}
 		// Set the passphrase file path in config
-		if err := cfgManager.SetWithoutValidation("keyring_passphrase", passphraseFile); err != nil {
+		if err := manager.SetWithoutValidation("keyring_passphrase", passphraseFile); err != nil {
 			return errors.Wrap(err, "failed to set keyring passphrase file")
 		}
 	}
 
 	// Save the configuration (all at once)
-	if err := cfgManager.Save(); err != nil {
+	if err := manager.Save(); err != nil {
 		return errors.Wrap(err, "failed to initialize config")
 	}
 
@@ -746,7 +728,7 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 	if encryptionKey != "" {
 		printValue("%s\n", encryptionKey)
 		printText(indent1 + "🔒 Encryption Private Key: ")
-		privateKeyPath := cfgManager.GetPrivateKeyPath()
+		privateKeyPath := manager.GetPrivateKeyPath()
 		printPath("%s\n", privateKeyPath)
 	} else {
 		printNote("(empty - set later with 'guardiand config set encryption-public-key <key>')")
@@ -768,8 +750,8 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 // resolveAddressWithPassword resolves the guardian address from the keyring
 // in-process using the provided passphrase (the file may not exist yet during
 // init). Returns "" on failure.
-func resolveAddressWithPassword(keyName, keyringBackend, passphrase string, keyringDir ...string) string {
-	keyDir := cfgManager.GetKeyDirectory()
+func resolveAddressWithPassword(manager *config.Manager, keyName, keyringBackend, passphrase string, keyringDir ...string) string {
+	keyDir := manager.GetKeyDirectory()
 	if len(keyringDir) > 0 && keyringDir[0] != "" {
 		keyDir = keyringDir[0]
 	}
@@ -790,17 +772,18 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 
 	// Use the global config manager (respects --config-path flag)
 	// Load current config - require file to exist for modifications
-	if err := cfgManager.Load(); err != nil {
+	manager, _, err := requireConfig(cmd)
+	if err != nil {
 		return err
 	}
 
 	// Set the value
-	if err := cfgManager.Set(key, value); err != nil {
+	if err := manager.Set(key, value); err != nil {
 		return errors.Wrap(err, "failed to set config")
 	}
 
 	// Save the config
-	if err := cfgManager.Save(); err != nil {
+	if err := manager.Save(); err != nil {
 		return errors.Wrap(err, "failed to save config")
 	}
 
@@ -813,12 +796,13 @@ func runConfigGet(cmd *cobra.Command, args []string) error {
 
 	// Use the global config manager (respects --config-path flag)
 	// Load current config - require file to exist
-	if err := cfgManager.Load(); err != nil {
+	manager, _, err := requireConfig(cmd)
+	if err != nil {
 		return err
 	}
 
 	// Get the value
-	value, err := cfgManager.Get(key)
+	value, err := manager.Get(key)
 	if err != nil {
 		return err
 	}
@@ -830,17 +814,18 @@ func runConfigGet(cmd *cobra.Command, args []string) error {
 func runConfigList(cmd *cobra.Command, args []string) error {
 	// Use the global config manager (respects --config-path flag)
 	// Load current config - require file to exist
-	if err := cfgManager.Load(); err != nil {
+	manager, _, err := requireConfig(cmd)
+	if err != nil {
 		return err
 	}
 
 	// Get grouped configuration
-	groups := cfgManager.ListAllGrouped()
+	groups := manager.ListAllGrouped()
 
 	// Print header
 	printHeader("Guardian Configuration")
 	printText("Config file: ")
-	printPath("%s\n\n", cfgManager.GetConfigPath())
+	printPath("%s\n\n", manager.GetConfigPath())
 
 	// Define group order for consistent display
 	groupOrder := []string{
@@ -931,12 +916,13 @@ func runConfigList(cmd *cobra.Command, args []string) error {
 func runConfigValidate(cmd *cobra.Command, args []string) error {
 	// Use the global config manager (respects --config-path flag)
 	// Load current config - require file to exist
-	if err := cfgManager.Load(); err != nil {
+	manager, _, err := requireConfig(cmd)
+	if err != nil {
 		return err
 	}
 
 	// Validate config
-	if err := cfgManager.Validate(); err != nil {
+	if err := manager.Validate(); err != nil {
 		return errors.Wrap(err, "configuration validation failed")
 	}
 
@@ -1016,10 +1002,11 @@ it again before the command reports success.`,
 }
 
 func runConfigMigrateKey(cmd *cobra.Command, args []string) error {
-	if err := cfgManager.Load(); err != nil {
+	manager, _, err := requireConfig(cmd)
+	if err != nil {
 		return err
 	}
-	effective := cfgManager.GetConfig()
+	effective := manager.GetConfig()
 	keyPath := effective.EncryptionPrivateKeyPath
 
 	flagPassphraseFile, _ := cmd.Flags().GetString("passphrase-file")
@@ -1091,19 +1078,19 @@ func runConfigMigrateKey(cmd *cobra.Command, args []string) error {
 	// Store the passphrase beside the key for unattended operation, unless
 	// it already came from a file or the operator opted out.
 	if !passphraseFromFile && flagPassphraseFile == "" && !noPassphraseFile {
-		if err := writeEncryptionKeyPassphraseFile(passphrase); err != nil {
+		if err := writeEncryptionKeyPassphraseFile(manager, passphrase); err != nil {
 			return errors.Wrap(err, "failed to store share-key passphrase file")
 		}
-		if err := cfgManager.Save(); err != nil {
+		if err := manager.Save(); err != nil {
 			return errors.Wrap(err, "failed to save config")
 		}
 		printNote("Passphrase stored at %s (0600) so the daemon can decrypt unattended", custody.SiblingPassphrasePath(keyPath))
 	}
 	if flagPassphraseFile != "" {
-		if err := cfgManager.SetWithoutValidation("encryption_key_passphrase", flagPassphraseFile); err != nil {
+		if err := manager.SetWithoutValidation("encryption_key_passphrase", flagPassphraseFile); err != nil {
 			return errors.Wrap(err, "failed to set encryption_key_passphrase")
 		}
-		if err := cfgManager.Save(); err != nil {
+		if err := manager.Save(); err != nil {
 			return errors.Wrap(err, "failed to save config")
 		}
 	}
@@ -1123,6 +1110,10 @@ func runConfigMigrateKey(cmd *cobra.Command, args []string) error {
 }
 
 func runConfigCreateEncryptionKey(cmd *cobra.Command, args []string) error {
+	manager, _, err := optionalConfig(cmd)
+	if err != nil {
+		return err
+	}
 
 	// Get flag values
 	fileName, _ := cmd.Flags().GetString("file-name")
@@ -1146,7 +1137,7 @@ func runConfigCreateEncryptionKey(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// No directory flag provided, derive from config path
-		expandedDir = cfgManager.GetKeyDirectory()
+		expandedDir = manager.GetKeyDirectory()
 	}
 
 	// Define file paths
@@ -1230,11 +1221,11 @@ func runConfigCreateEncryptionKey(cmd *cobra.Command, args []string) error {
 // command but uses config-derived paths and returns the public key hex for
 // config init. The private key is always written as an encrypted envelope —
 // there is no plaintext generation path (key custody plan, decision 1).
-func runCreateEncryptionKey(passphrase string) (string, error) {
+func runCreateEncryptionKey(manager *config.Manager, passphrase string) (string, error) {
 	// Use config-derived paths
-	privateKeyPath := cfgManager.GetPrivateKeyPath()
-	publicKeyPath := cfgManager.GetPublicKeyPath()
-	directory := cfgManager.GetKeyDirectory()
+	privateKeyPath := manager.GetPrivateKeyPath()
+	publicKeyPath := manager.GetPublicKeyPath()
+	directory := manager.GetKeyDirectory()
 
 	// Check if keys already exist
 	if _, err := os.Stat(privateKeyPath); err == nil {
@@ -1295,12 +1286,12 @@ func generateEncryptedKeypair(privateKeyPath, publicKeyPath, passphrase string) 
 // conventional sibling file of the private key (verbatim, 0600) and records
 // the path in config — the daemon must decrypt unattended, and the config
 // field carries a file path by design, never the secret itself.
-func writeEncryptionKeyPassphraseFile(passphrase string) error {
-	sibling := custody.SiblingPassphrasePath(cfgManager.GetPrivateKeyPath())
+func writeEncryptionKeyPassphraseFile(manager *config.Manager, passphrase string) error {
+	sibling := custody.SiblingPassphrasePath(manager.GetPrivateKeyPath())
 	if err := custody.WritePassphraseFile(sibling, passphrase); err != nil {
 		return err
 	}
-	return cfgManager.SetWithoutValidation("encryption_key_passphrase", sibling)
+	return manager.SetWithoutValidation("encryption_key_passphrase", sibling)
 }
 
 // promptNewPassphrase reads and confirms a new passphrase with hidden input,

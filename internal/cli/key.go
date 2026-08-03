@@ -85,10 +85,11 @@ is reachable. Treat the words exactly like the key itself.`,
 }
 
 func runKeyBackup(cmd *cobra.Command, args []string) error {
-	if err := cfgManager.Load(); err != nil {
+	manager, _, err := requireConfig(cmd)
+	if err != nil {
 		return err
 	}
-	effective := cfgManager.GetConfig()
+	effective := manager.GetConfig()
 
 	output, _ := cmd.Flags().GetString("output")
 	passphraseFile, _ := cmd.Flags().GetString("passphrase-file")
@@ -134,7 +135,7 @@ func runKeyBackup(cmd *cobra.Command, args []string) error {
 	}
 
 	fingerprint := ""
-	if configBytes, err := os.ReadFile(cfgManager.GetConfigPath()); err == nil {
+	if configBytes, err := os.ReadFile(manager.GetConfigPath()); err == nil {
 		sum := sha256.Sum256(configBytes)
 		fingerprint = hex.EncodeToString(sum[:])
 	}
@@ -254,10 +255,10 @@ files from a bundle are restored into the configured keyring directory.`,
 }
 
 func runKeyRestore(cmd *cobra.Command, args []string) error {
-	if err := cfgManager.Load(); err != nil {
-		return errors.Wrap(err, "a configuration is required before restoring (run 'guardiand config init' first)")
+	manager, effective, err := requireConfig(cmd)
+	if err != nil {
+		return errors.Wrap(err, "a configuration is required before restoring")
 	}
-	effective := cfgManager.GetConfig()
 
 	input, _ := cmd.Flags().GetString("input")
 	passphraseFile, _ := cmd.Flags().GetString("passphrase-file")
@@ -268,7 +269,6 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 	var (
 		privateKey [32]byte
 		bundle     *custody.Bundle
-		err        error
 	)
 
 	switch {
@@ -360,7 +360,7 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 		if err := custody.WritePassphraseFile(custody.SiblingPassphrasePath(keyPath), atRestPassphrase); err != nil {
 			return err
 		}
-		if err := cfgManager.SetWithoutValidation("encryption_key_passphrase", custody.SiblingPassphrasePath(keyPath)); err != nil {
+		if err := manager.SetWithoutValidation("encryption_key_passphrase", custody.SiblingPassphrasePath(keyPath)); err != nil {
 			return err
 		}
 	}
@@ -387,17 +387,17 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 			printSuccess("Restored %d keyring file(s) into %s", len(bundle.KeyringFiles), effective.KeyringDir)
 		}
 		if bundle.KeyName != "" {
-			if err := cfgManager.SetWithoutValidation("key_name", bundle.KeyName); err != nil {
+			if err := manager.SetWithoutValidation("key_name", bundle.KeyName); err != nil {
 				return err
 			}
 		}
 		if bundle.GuardianAddress != "" {
-			if err := cfgManager.SetWithoutValidation("guardian_address", bundle.GuardianAddress); err != nil {
+			if err := manager.SetWithoutValidation("guardian_address", bundle.GuardianAddress); err != nil {
 				return err
 			}
 		}
 		if bundle.ConfigFingerprint != "" {
-			if configBytes, err := os.ReadFile(cfgManager.GetConfigPath()); err == nil {
+			if configBytes, err := os.ReadFile(manager.GetConfigPath()); err == nil {
 				sum := sha256.Sum256(configBytes)
 				if hex.EncodeToString(sum[:]) != bundle.ConfigFingerprint {
 					printNote("Config fingerprint differs from backup time — review 'guardiand config list' for drift")
@@ -406,10 +406,10 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := cfgManager.SetWithoutValidation("encryption_public_key", derivedHex); err != nil {
+	if err := manager.SetWithoutValidation("encryption_public_key", derivedHex); err != nil {
 		return err
 	}
-	if err := cfgManager.Save(); err != nil {
+	if err := manager.Save(); err != nil {
 		return errors.Wrap(err, "failed to save config")
 	}
 

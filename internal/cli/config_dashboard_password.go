@@ -50,7 +50,7 @@ command-line argument, because arguments land in shell history and in ps.`,
   printf '%s' "$DASHBOARD_PASSWORD" | guardiand config set-dashboard-password --stdin`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runConfigSetDashboardPassword(generate, fromStdin)
+			return runConfigSetDashboardPassword(cmd, generate, fromStdin)
 		},
 	}
 
@@ -60,17 +60,17 @@ command-line argument, because arguments land in shell history and in ps.`,
 	return cmd
 }
 
-func runConfigSetDashboardPassword(generate, fromStdin bool) error {
+func runConfigSetDashboardPassword(cmd *cobra.Command, generate, fromStdin bool) error {
 	if generate && fromStdin {
 		return errors.New("--generate and --stdin are mutually exclusive")
 	}
 
-	if err := cfgManager.Load(); err != nil {
+	manager, _, err := requireConfig(cmd)
+	if err != nil {
 		return err
 	}
 
 	var password string
-	var err error
 	switch {
 	case generate:
 		password, err = generatePassword()
@@ -87,10 +87,10 @@ func runConfigSetDashboardPassword(generate, fromStdin bool) error {
 	if err != nil {
 		return err
 	}
-	if err := cfgManager.Set("dashboard_password_hash", hash); err != nil {
+	if err := manager.Set("dashboard_password_hash", hash); err != nil {
 		return errors.Wrap(err, "failed to set dashboard_password_hash")
 	}
-	if err := cfgManager.Save(); err != nil {
+	if err := manager.Save(); err != nil {
 		return errors.Wrap(err, "failed to save config")
 	}
 
@@ -107,7 +107,7 @@ func runConfigSetDashboardPassword(generate, fromStdin bool) error {
 	printSuccess("Dashboard password set (stored as a bcrypt hash)")
 	printNote("Sign in as user %q.", dashboard.Username)
 
-	effective := cfgManager.GetConfig()
+	effective := manager.GetConfig()
 	if effective.DashboardAuthRequired() && !effective.DashboardTLSEnabled() {
 		printNote("Not encrypted: Basic auth defends against unauthorised readers, not against a network eavesdropper.")
 		printNote("Set dashboard_tls_cert_file and dashboard_tls_key_file, or front the port with a TLS proxy.")

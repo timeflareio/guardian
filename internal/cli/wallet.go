@@ -5,6 +5,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/timeflareio/guardian/internal/chain"
+	"github.com/timeflareio/guardian/internal/config"
 )
 
 // NewWalletCmd creates the wallet command group — lifecycle for the
@@ -39,14 +40,20 @@ the 24-word mnemonic restores the same account everywhere.`,
 	return cmd
 }
 
+// The wallet commands resolve their configuration optionally, not by
+// requirement: the setup order this daemon documents is `wallet create` first,
+// `config init` second — init resolves the guardian's address from the signing
+// key, so the key has to exist before there is a configuration file to demand.
+// Keyring backend and directory fall back to their defaults, which is what a
+// first key creation wants anyway.
+
 // walletKeyName resolves the key name: --name flag, else the configured
 // key_name.
-func walletKeyName(cmd *cobra.Command) (string, error) {
+func walletKeyName(cmd *cobra.Command, effective *config.Config) (string, error) {
 	name, _ := cmd.Flags().GetString("name")
 	if name != "" {
 		return name, nil
 	}
-	effective := cfgManager.GetConfig()
 	if effective.KeyName == "" {
 		return "", errors.New("no key name: pass --name or set key_name in config")
 	}
@@ -68,15 +75,16 @@ securely; it is the only way to recover the key and any balance it holds.`,
 }
 
 func runWalletCreate(cmd *cobra.Command, args []string) error {
-	if err := cfgManager.Load(); err != nil {
+	_, effective, err := optionalConfig(cmd)
+	if err != nil {
 		return err
 	}
-	name, err := walletKeyName(cmd)
+	name, err := walletKeyName(cmd, effective)
 	if err != nil {
 		return err
 	}
 
-	address, mnemonic, err := chain.CreateWalletKey(cfgManager.GetConfig(), name)
+	address, mnemonic, err := chain.CreateWalletKey(effective, name)
 	if err != nil {
 		return err
 	}
@@ -116,10 +124,11 @@ resolve to the same account everywhere.`,
 }
 
 func runWalletImport(cmd *cobra.Command, args []string) error {
-	if err := cfgManager.Load(); err != nil {
+	_, effective, err := optionalConfig(cmd)
+	if err != nil {
 		return err
 	}
-	name, err := walletKeyName(cmd)
+	name, err := walletKeyName(cmd, effective)
 	if err != nil {
 		return err
 	}
@@ -129,7 +138,7 @@ func runWalletImport(cmd *cobra.Command, args []string) error {
 		return errors.New("no mnemonic entered")
 	}
 
-	address, err := chain.ImportWalletKey(cfgManager.GetConfig(), name, mnemonic)
+	address, err := chain.ImportWalletKey(effective, name, mnemonic)
 	if err != nil {
 		return err
 	}
@@ -159,15 +168,16 @@ replacement for 'timeflared keys show -a'.`,
 }
 
 func runWalletShowAddress(cmd *cobra.Command, args []string) error {
-	if err := cfgManager.Load(); err != nil {
+	_, effective, err := optionalConfig(cmd)
+	if err != nil {
 		return err
 	}
-	name, err := walletKeyName(cmd)
+	name, err := walletKeyName(cmd, effective)
 	if err != nil {
 		return err
 	}
 
-	address, err := chain.ResolveKeyAddress(cfgManager.GetConfig(), name)
+	address, err := chain.ResolveKeyAddress(effective, name)
 	if err != nil {
 		return err
 	}

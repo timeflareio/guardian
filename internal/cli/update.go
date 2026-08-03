@@ -1,13 +1,12 @@
 package cli
 
 import (
-	"os"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/fatih/color"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/timeflareio/guardian/internal/chain"
+	"github.com/timeflareio/guardian/internal/config"
 )
 
 func NewUpdateCmd() *cobra.Command {
@@ -55,11 +54,9 @@ future assignments.`,
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
-	// Check if config exists first
-	configPath := cfgManager.GetConfigPath()
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		ShowNoConfigMessage(configPath)
-		return errors.New("configuration file not found")
+	_, cfg, err := requireConfig(cmd)
+	if err != nil {
+		return err
 	}
 
 	// Get flag values
@@ -99,7 +96,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show update and get confirmation (unless auto-accept is enabled)
-	if !autoAccept && !showUpdateAndConfirm(stakeAmount, availableFrom, availableUntil, acceptingSecrets, availableFromFlag, availableUntilFlag, stakeFlag, acceptingSecretsFlag) {
+	if !autoAccept && !showUpdateAndConfirm(cfg, stakeAmount, availableFrom, availableUntil, acceptingSecrets, availableFromFlag, availableUntilFlag, stakeFlag, acceptingSecretsFlag) {
 		printNote("Update cancelled.")
 		return nil
 	}
@@ -121,11 +118,11 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(err, "update failed")
 	}
 
-	showUpdateSuccess(txHash)
+	showUpdateSuccess(cfg, txHash)
 	return nil
 }
 
-func showUpdateAndConfirm(stakeAmount string, availableFrom, availableUntil int64, acceptingSecrets bool, availableFromFlag, availableUntilFlag, stakeFlag, acceptingSecretsFlag bool) bool {
+func showUpdateAndConfirm(cfg *config.Config, stakeAmount string, availableFrom, availableUntil int64, acceptingSecrets bool, availableFromFlag, availableUntilFlag, stakeFlag, acceptingSecretsFlag bool) bool {
 	headerColor := color.New(color.FgGreen, color.Bold)
 	sectionColor := color.New(color.FgYellow, color.Bold)
 	valueColor := color.New(color.FgCyan)
@@ -183,7 +180,7 @@ func showUpdateAndConfirm(stakeAmount string, availableFrom, availableUntil int6
 	return promptForConfirmation("Execute this update?")
 }
 
-func showUpdateSuccess(txHash string) {
+func showUpdateSuccess(cfg *config.Config, txHash string) {
 	printEmptyLine()
 	printTextLn("✅ Guardian Update Broadcast Successfully!")
 	printTextLn("═══════════════════════════════════════")
