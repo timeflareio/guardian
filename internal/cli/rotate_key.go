@@ -20,6 +20,27 @@ import (
 	"github.com/timeflareio/guardian/internal/custody"
 )
 
+// cutoverEpochKeys performs the two renames that promote a staged key and
+// retire the outgoing one, returning where the retired key now lives. Split out
+// of the command because it runs AFTER the rotation is irreversibly on-chain:
+// every failure here leaves local files mid-move, so each message has to say
+// exactly which move to finish by hand. That is precisely the behaviour worth a
+// test, and the surrounding command cannot be tested without a live chain.
+func cutoverEpochKeys(keyPath, stagedPath string, retiringEpoch uint64, txHash string) (string, error) {
+	retiredPath := custody.EpochKeyPath(keyPath, retiringEpoch)
+	if err := os.Rename(keyPath, retiredPath); err != nil {
+		return "", errors.Wrapf(err,
+			"rotation SUBMITTED (tx %s) but retiring the old key file failed — resolve manually: move %s to %s and %s to %s",
+			txHash, keyPath, retiredPath, stagedPath, keyPath)
+	}
+	if err := os.Rename(stagedPath, keyPath); err != nil {
+		return "", errors.Wrapf(err,
+			"rotation SUBMITTED (tx %s) but promoting the new key file failed — resolve manually: move %s to %s",
+			txHash, stagedPath, keyPath)
+	}
+	return retiredPath, nil
+}
+
 // NewRotateKeyCmd creates the rotate-key command (guardian key rotation plan:
 // generate → backup ceremony → submit — NEVER submit before the backup
 // ceremony completes).
@@ -247,16 +268,9 @@ func runRotateKey(cmd *cobra.Command, args []string) error {
 
 	// 5. Cutover: retire the old key beside the new one, promote the staged
 	// key, refresh the public key file and configuration.
-	retiredPath := custody.EpochKeyPath(effective.EncryptionPrivateKeyPath, currentEpoch)
-	if err := os.Rename(effective.EncryptionPrivateKeyPath, retiredPath); err != nil {
-		return errors.Wrapf(err,
-			"rotation SUBMITTED (tx %s) but retiring the old key file failed — resolve manually: move %s to %s and %s to %s",
-			txHash, effective.EncryptionPrivateKeyPath, retiredPath, stagedPath, effective.EncryptionPrivateKeyPath)
-	}
-	if err := os.Rename(stagedPath, effective.EncryptionPrivateKeyPath); err != nil {
-		return errors.Wrapf(err,
-			"rotation SUBMITTED (tx %s) but promoting the new key file failed — resolve manually: move %s to %s",
-			txHash, stagedPath, effective.EncryptionPrivateKeyPath)
+	retiredPath, err := cutoverEpochKeys(effective.EncryptionPrivateKeyPath, stagedPath, currentEpoch, txHash)
+	if err != nil {
+		return err
 	}
 	// The informational hex copy lives beside the private key (the layout
 	// config init generates) — GetPublicKeyPath resolves into the keyring
