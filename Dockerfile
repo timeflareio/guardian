@@ -21,11 +21,12 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
 
-ARG VERSION=dev
+# No -ldflags and no version arg: the toolchain stamps the module version and
+# VCS state itself, which is why `COPY . .` above must include .git. Keep it out
+# of any .dockerignore, or the image silently reports "(devel)".
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath \
-    -ldflags "-X github.com/timeflareio/guardian/cmd/guardiand/cmd.version=${VERSION}" \
     -o /out/guardiand ./cmd/guardiand
 
 FROM gcr.io/distroless/static-debian12:nonroot

@@ -90,11 +90,11 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = logger.Sync() }() // Error ignored on defer
 
-	printSuccess("🎯 Starting Timeflare Guardian Service v%s...", version)
+	printSuccess("🎯 Starting Timeflare Guardian Service %s...", buildVersion())
 	printEmptyLine()
 
 	logger.Info("Starting Timeflare Guardian Service",
-		zap.String("version", version),
+		zap.String("version", buildVersion()),
 		zap.String("chain_id", cfg.ChainID),
 		zap.String("key_name", cfg.KeyName))
 
@@ -120,7 +120,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// The read-only operator dashboard: the daemon supplies the data, the
 	// monitoring service owns the listener. Build info comes from here because
 	// only the command knows the resolved config path and the binary's version.
-	guardianService.SetBuildInfo(version, cfgManager.GetConfigPath())
+	guardianService.SetBuildInfo(buildVersion(), cfgManager.GetConfigPath())
 	monitoringService.SetDashboardSource(guardianService)
 
 	// Pre-flight: chain reachable, guardian registered, and the local share
