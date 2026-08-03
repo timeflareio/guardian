@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Go
+coverage.out
+coverage.html
+bin/
+
+# Release packaging output
+dist/
+
+# Guardian runtime state (keys, logs, PIDs) — never committed
+.guardian/
