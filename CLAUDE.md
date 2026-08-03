@@ -11,8 +11,8 @@ secret's key, and reveals that share when the time-lock opens — earning a rewa
 for doing so, and losing bond for revealing early or not at all.
 
 It holds long-lived key material. `docs/guides/GUARDIAN_KEY_CUSTODY.md` is the
-authority on how, and any change touching `custody/` should be read against it
-first.
+authority on how, and any change touching `internal/custody/` should be read
+against it first.
 
 ## What this repository depends on
 
