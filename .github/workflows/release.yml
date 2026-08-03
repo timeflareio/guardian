@@ -84,10 +84,7 @@ jobs:
             out="guardiand-${GITHUB_REF_NAME}-${os}-${arch}"
             echo "--> ${out}"
             CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" go build -trimpath \
-              -ldflags "-X github.com/cosmos/cosmos-sdk/version.Name=guardian \
-                        -X github.com/cosmos/cosmos-sdk/version.AppName=guardiand \
-                        -X github.com/cosmos/cosmos-sdk/version.Version=${GITHUB_REF_NAME} \
-                        -X github.com/cosmos/cosmos-sdk/version.Commit=${GITHUB_SHA}" \
+              -ldflags "-X github.com/timeflareio/guardian/cmd/guardiand/cmd.version=${GITHUB_REF_NAME}" \
               -o "dist/${out}" ./cmd/guardiand
           done
           ( cd dist && sha256sum guardiand-* > "guardiand-${GITHUB_REF_NAME}-checksums.txt" )

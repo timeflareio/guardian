@@ -22,14 +22,10 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 
 ARG VERSION=dev
-ARG COMMIT=unknown
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath \
-    -ldflags "-X github.com/cosmos/cosmos-sdk/version.Name=guardian \
-              -X github.com/cosmos/cosmos-sdk/version.AppName=guardiand \
-              -X github.com/cosmos/cosmos-sdk/version.Version=${VERSION} \
-              -X github.com/cosmos/cosmos-sdk/version.Commit=${COMMIT}" \
+    -ldflags "-X github.com/timeflareio/guardian/cmd/guardiand/cmd.version=${VERSION}" \
     -o /out/guardiand ./cmd/guardiand
 
 FROM gcr.io/distroless/static-debian12:nonroot
