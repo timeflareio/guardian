@@ -8,10 +8,21 @@ import (
 	"github.com/timeflareio/guardian/config"
 )
 
-const (
-	appName = "guardiand"
-	version = "1.0.0"
-)
+const appName = "guardiand"
+
+// version is set at build time via
+//
+//	-ldflags "-X github.com/timeflareio/guardian/cmd/guardiand/cmd.version=vX.Y.Z"
+//
+// It is deliberately a var, not a const: the linker's -X flag can only write to
+// variables, so a const cannot be stamped and would silently keep whatever the
+// source says. This previously read "1.0.0" and every release would have shipped
+// claiming that, regardless of its tag.
+//
+// The default is "dev" rather than a version number because this repository does
+// not carry its own version — releases do. An unstamped binary is a local build
+// and should say so.
+var version = "dev"
 
 var (
 	configPath string
