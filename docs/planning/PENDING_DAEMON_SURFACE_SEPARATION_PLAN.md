@@ -4,8 +4,10 @@
 the conventional Go layout that makes the separation enforceable rather than
 merely intended.*
 
-> **Status: ready** — created and ruled 3 August 2026. All five phases are
-> settled; no open items outstanding.
+> **Status: in progress** — created and ruled 3 August 2026; all five phases
+> executed on `worktree-daemon-surface-separation` the same day. What remains is
+> the chain-side half of §4 (see *Residual*, below), which is another
+> repository's change and not this branch's to make.
 > **Priority**: P2 — layout and separation debt. Cheapest to pay now (nothing
 > imports this module, so no consumer is disturbed), and it is what unblocks the
 > test coverage standing between an operator and key loss. Argued below (§1) why
@@ -155,8 +157,14 @@ one. Commands divide into three declared classes:
 - **must work without one** — `version`, `help`, `config init`. These never
   touch the loader. `config init` resolves its target path once, up front, and
   never replaces the manager mid-run.
-- **needs one only conditionally** — `health`, which reads `HealthPort` from
-  config unless `--url` is given. Make `--url` self-sufficient.
+- **needs one only conditionally** — falling back to defaults plus environment
+  overrides. `health` reads `HealthPort` unless `--url` is given, so `--url` is
+  made self-sufficient. The `wallet` verbs belong here too, and the reason is the
+  documented setup order: `wallet create` runs *before* `config init`, because
+  init resolves the guardian's address from the signing key. Requiring a
+  configuration file would make the first step of a new guardian impossible.
+  `config create-encryption-key` is the same case — it can write into a named
+  directory before any configuration exists.
 
 Then wire the flag layer that the generated YAML header and `ApplyEnvOverrides`
 already advertise. Today "flags > env > file > defaults" has no flag layer at
@@ -329,6 +337,25 @@ lost if a `v0.0.x` tag ships in the meantime with one binary — this repository
 0.x with no third-party operators, which is the same reasoning that plan uses for
 its own interim tags.
 
+### Residual — the chain repository
+
+Everything in Phases 1–5 that belongs to this repository has landed. Two changes
+in `timeflareio/chain` remain, and they are why the devnet is not yet driving the
+split pair:
+
+1. **`devnet/guardians.sh:370`** passes `guardiand start --accept`. The flag is
+   still accepted and ignored here, so nothing is broken today — but it is
+   step 2 of the three-step removal above, and the flag cannot be deleted from
+   this repository until it has landed.
+2. **`devnet/guardians.sh:271` and `devnet/docker/init-guardians.sh:203`** invoke
+   `guardiand register`, which is now a `guardianctl` verb. Until these are
+   repointed the devnet's guardians will not register. `--accept` on `register`
+   is unaffected and stays.
+
+Both are confirmed against the chain checkout rather than assumed. Neither is
+this branch's to make: they are a companion pull request in that repository,
+and until it lands the compose devnet needs the previous guardian image.
+
 ## 5. Cross-component sweep
 
 Per `README.md`'s rename/removal rule, the audit is grep-driven and confirms
@@ -393,6 +420,25 @@ network-facing surface, cannot export it.
   convention; and `common.mk` passes cosmos-sdk `-X version.*` ldflags that the
   `Dockerfile` deliberately omits, so `make build` and the image stamp
   differently. Both are unrelated to this concern and want a hygiene plan.
+- **What `CollectKeyringFiles` sweeps into a bundle.** `keyring_dir` defaults to
+  the guardian's whole data directory, so a backup bundle contains `config.yaml`,
+  the at-rest passphrase sibling and the keyring passphrase — and anything else
+  left there, including a backup passphrase file an operator stores beside the
+  bundle, which would put a bundle's own passphrase inside it. Two consequences
+  fall out: the "store them separately" guidance is load-bearing in a way nothing
+  enforces, and `key restore` effectively always needs `--force`, because the
+  configuration file it requires in order to run is itself in the bundle. Found
+  while writing the round-trip test, which now keeps bundles off-host as the
+  guidance says. Bundle composition is key custody, so it wants its own plan.
+- **`create-encryption-key` and `config init` disagree on names.** init writes
+  `private_key` and `public_key.hex`; `create-encryption-key --file-name X`
+  writes `X.key` and `X.hex`. The two layouts never meet, so the standalone
+  command cannot produce the files the configuration points at. A papercut, not a
+  defect, and adjacent to the path-derivation heuristics above.
+- **`status` exits zero when it reports an unhealthy guardian.** That is by
+  design and stays: `status` is a human report, and `health` is the command that
+  documents a non-zero exit for scripts and supervisors. Noted because it looks
+  like the `start` defect this plan fixed and is not one.
 - **Dashboard exposure, TLS and authentication** — unchanged throughout.
 - **Operator documentation.** This repository has no install or run guide, and
   this plan does not create one — while changing the interface such a guide would
