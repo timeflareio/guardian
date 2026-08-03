@@ -1,0 +1,38 @@
+version: 2
+updates:
+  # This module carries the cosmos-sdk pin set and MUST mirror the chain's
+  # exactly (make verify-pins). The cosmos group therefore arrives as one PR so
+  # the consensus stack is reviewed together and never bumped casually — and a
+  # cosmos bump here is only correct once the chain has moved first.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cosmos:
+        patterns:
+          - "github.com/cosmos/*"
+          - "cosmossdk.io/*"
+          - "github.com/cometbft/*"
+      # The timeflare modules are deliberately separate from routine batching:
+      # a wire-contract bump can require code changes here, and a crypto bump can
+      # change primitive behaviour.
+      timeflare:
+        patterns:
+          - "github.com/timeflareio/*"
+      routine:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "github.com/cosmos/*"
+          - "cosmossdk.io/*"
+          - "github.com/cometbft/*"
+          - "github.com/timeflareio/*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

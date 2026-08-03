@@ -1,0 +1,31 @@
+{
+  "_description": "Wallet HD derivation pinned across implementations (docs/spec.md 'Network Configuration'; docs/guides/CLIENT_CONVENTIONS.md §9). Each vector maps a 24-word BIP39 mnemonic (generated from the entropy named, e.g. entropy-zero = 32 × 0x00) to its account address derived at the chain path m/44'/9733'/0'/0/0 with an empty BIP39 passphrase. wrong_address_cosmoshub is the SAME mnemonic derived at cosmjs's default m/44'/118'/0'/0/0 (Cosmos Hub): implementations assert their derived address does NOT equal it, so a regression to the library default fails with a recognisable message rather than an opaque mismatch. Asserted by app/wallet_derivation_test.go (chain keyring) and typescript-sdk wallet.test.ts. Append-only, same regime as the crypto corpora.",
+  "hd_path": "m/44'/9733'/0'/0/0",
+  "wrong_hd_path_cosmoshub": "m/44'/118'/0'/0/0",
+  "vectors": [
+    {
+      "name": "entropy-zero",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art",
+      "address": "tmflr16r63wvs6vsulx4hkmpeuf0hus4tuh0r2kwtg5s",
+      "wrong_address_cosmoshub": "tmflr1r5v5srda7xfth3hn2s26txvrcrntldjuu5vchq"
+    },
+    {
+      "name": "entropy-sequential",
+      "mnemonic": "abandon amount liar amount expire adjust cage candy arch gather drum bullet absurd math era live bid rhythm alien crouch range attend journey unaware",
+      "address": "tmflr1gncdyzv6hmfkdjykun2jnwlaupvgqfxmyrgg5g",
+      "wrong_address_cosmoshub": "tmflr16yy67pj7ncthhpmfmyascn2qp2al0g0eqd7rgg"
+    },
+    {
+      "name": "entropy-ones",
+      "mnemonic": "baby mass dust captain baby mass dust captain baby mass dust captain baby mass dust captain baby mass dust captain baby mass dust cake",
+      "address": "tmflr1c5al62pjn5uhtzm0n72d254yp7mjp9zwh6x0nn",
+      "wrong_address_cosmoshub": "tmflr1ctsk4daak8syk8008z4ut4jls9yxdg8mjvasc3"
+    },
+    {
+      "name": "entropy-high",
+      "mnemonic": "upon jazz roof tape upon jazz roof tape upon jazz roof tape upon jazz roof tape upon jazz roof tape upon jazz roof situate",
+      "address": "tmflr1apal69q77v6a3xfucm3g080xumh5rvscjzne5e",
+      "wrong_address_cosmoshub": "tmflr1vfpa4lvwzf3j2azjvgwfssysxg464ghallpdqg"
+    }
+  ]
+}

@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Guardian — Timeflare</title>
+<!--
+  Brand tokens and the Split Seal mark below are COPIED from
+  mobile-client/design/timeflare-brand-1a.md and
+  mobile-client/design/logo-split-seal.svg. go:embed cannot reach outside the
+  guardian module, so they cannot be referenced. The brand doc remains the
+  single place either is edited — change it there, then re-copy here.
+
+  Fonts load from Google Fonts with the guide's full fallback stacks: the
+  dashboard must stay legible on an air-gapped guardian host, so no panel may
+  depend on a webfont arriving.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --tf-ink:#0E0F13;
+  --tf-slate:#1C1E24;
+  --tf-flare:#4D7FFF;
+  --tf-signal:#F5521E;
+  --tf-bone:#F4F2EC;
+  --tf-text-muted:rgba(244,242,236,.6);
+  --tf-text-faint:rgba(244,242,236,.4);
+  --tf-hairline:rgba(244,242,236,.09);
+  --tf-font-display:'Space Grotesk',system-ui,sans-serif;
+  --tf-font-mono:'Space Mono',ui-monospace,monospace;
+  --tf-font-body:'Hanken Grotesk',system-ui,sans-serif;
+  --tf-radius-btn:11px;
+  --tf-radius-card:16px;
+  --tf-radius-pill:20px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--tf-ink);color:var(--tf-bone);
+  font:400 14px/1.5 var(--tf-font-body);-webkit-font-smoothing:antialiased}
+a{color:var(--tf-flare)}
+header{display:flex;align-items:center;gap:12px;padding:20px 24px;
+  border-bottom:1px solid var(--tf-hairline);position:sticky;top:0;
+  background:var(--tf-ink);z-index:5;flex-wrap:wrap}
+.wordmark{font:600 19px var(--tf-font-display);letter-spacing:-.03em}
+.wordmark span{color:var(--tf-text-faint);font-weight:400}
+.spacer{flex:1}
+main{padding:24px;display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));
+  max-width:1600px;margin:0 auto}
+.card{background:var(--tf-slate);border-radius:var(--tf-radius-card);padding:18px 20px;
+  border:1px solid var(--tf-hairline);min-width:0}
+.card.wide{grid-column:1/-1}
+.eyebrow{font:700 10px var(--tf-font-mono);text-transform:uppercase;
+  letter-spacing:.14em;color:var(--tf-text-faint);margin:0 0 12px}
+h2{font:600 16px var(--tf-font-display);letter-spacing:-.02em;margin:0 0 4px}
+.big{font:600 26px var(--tf-font-display);letter-spacing:-.03em}
+.mono{font-family:var(--tf-font-mono);font-size:12.5px;word-break:break-all}
+.muted{color:var(--tf-text-muted)}
+.faint{color:var(--tf-text-faint);font-size:12px}
+.kv{display:flex;justify-content:space-between;gap:14px;padding:6px 0;
+  border-bottom:1px solid var(--tf-hairline);align-items:baseline}
+.kv:last-child{border-bottom:0}
+.kv dt{color:var(--tf-text-muted);font-size:12.5px;flex:0 0 auto}
+.kv dd{margin:0;text-align:right;font-family:var(--tf-font-mono);font-size:12.5px;min-width:0;word-break:break-word}
+dl{margin:0}
+.chip{display:inline-block;border:1px solid var(--tf-flare);color:var(--tf-flare);
+  font:700 10px var(--tf-font-mono);text-transform:uppercase;letter-spacing:.1em;
+  padding:5px 10px;border-radius:var(--tf-radius-pill);white-space:nowrap}
+.chip.urgent{border-color:var(--tf-signal);color:var(--tf-signal)}
+.chip.calm{border-color:var(--tf-hairline);color:var(--tf-text-muted)}
+/* At-risk reveals are the ONLY signal-saturated surface, per the brand guide. */
+.card.risk{border-color:var(--tf-signal)}
+.card.risk .eyebrow{color:var(--tf-signal)}
+.warn{border:1px solid var(--tf-signal);color:var(--tf-signal);border-radius:var(--tf-radius-btn);
+  padding:10px 12px;font-size:12.5px;margin:10px 0 0}
+.note{border:1px solid var(--tf-hairline);color:var(--tf-text-muted);
+  border-radius:var(--tf-radius-btn);padding:10px 12px;font-size:12px;margin:10px 0 0}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;font:700 10px var(--tf-font-mono);text-transform:uppercase;
+  letter-spacing:.12em;color:var(--tf-text-faint);padding:6px 8px 6px 0;white-space:nowrap}
+td{padding:7px 8px 7px 0;border-top:1px solid var(--tf-hairline);
+  font-family:var(--tf-font-mono);vertical-align:top}
+.scroll{overflow-x:auto}
+.empty{color:var(--tf-text-faint);font-size:12.5px;padding:8px 0}
+.drift{color:var(--tf-signal)}
+.ok{color:var(--tf-flare)}
+footer{padding:16px 24px 40px;color:var(--tf-text-faint);font-size:11.5px;
+  border-top:1px solid var(--tf-hairline);margin-top:8px}
+.stale{color:var(--tf-signal)}
+</style>
+</head>
+<body>
+<header>
+  <!-- Split Seal — copied from mobile-client/design/logo-split-seal.svg -->
+  <svg viewBox="0 0 46 46" width="30" height="30" aria-label="Timeflare">
+    <path d="M33.6 12.4 A15 15 0 1 1 12.4 33.6" fill="none" stroke="#F4F2EC" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M33.6 12.4 A15 15 0 0 0 12.4 33.6" fill="none" stroke="#4D7FFF" stroke-width="2" stroke-linecap="round" stroke-dasharray="0.5 4.4"/>
+    <line x1="12.4" y1="33.6" x2="8.5" y2="39.5" stroke="#F4F2EC" stroke-width="2.4" stroke-linecap="round"/>
+    <circle cx="33.6" cy="12.4" r="3.2" fill="#F5521E"/>
+  </svg>
+  <div class="wordmark">timeflare <span>guardian</span></div>
+  <div class="spacer"></div>
+  <span id="hdr-state" class="chip calm">connecting</span>
+  <span id="hdr-height" class="faint mono"></span>
+</header>
+
+<main>
+  <!-- 1. Daemon vitals -->
+  <section class="card" id="c-vitals">
+    <p class="eyebrow">Daemon vitals</p>
+    <div id="vitals-body" class="empty">loading…</div>
+  </section>
+
+  <!-- 8, 9, 12. Float, bond multiplier, balance -->
+  <section class="card" id="c-float">
+    <p class="eyebrow">Float &amp; capacity</p>
+    <div id="float-body" class="empty">loading…</div>
+  </section>
+
+  <!-- 11. Risk exposure -->
+  <section class="card" id="c-exposure">
+    <p class="eyebrow">Risk exposure</p>
+    <div id="exposure-body" class="empty">loading…</div>
+  </section>
+
+  <!-- 3. At-risk reveals — the only signal-saturated surface -->
+  <section class="card risk wide" id="c-risk" hidden>
+    <p class="eyebrow">At-risk reveals</p>
+    <div id="risk-body"></div>
+    <p class="faint">Display only — alerting is Prometheus/Grafana's job, deliberately not this dashboard's.</p>
+  </section>
+
+  <!-- 2. Work queue -->
+  <section class="card wide" id="c-queue">
+    <p class="eyebrow">Work queue &amp; reveal calendar</p>
+    <div id="queue-body" class="empty">loading…</div>
+  </section>
+
+  <!-- 5. Active assignments -->
+  <section class="card wide" id="c-assignments">
+    <p class="eyebrow">Active assignments</p>
+    <div id="assignments-body" class="empty">loading…</div>
+  </section>
+
+  <!-- 13, 14. Keys and rotation -->
+  <section class="card" id="c-keys">
+    <p class="eyebrow">Key identity</p>
+    <div id="keys-body" class="empty">loading…</div>
+  </section>
+  <section class="card" id="c-rotation">
+    <p class="eyebrow">Key rotation</p>
+    <div id="rotation-body" class="empty">loading…</div>
+  </section>
+
+  <!-- 4. Transaction outcomes -->
+  <section class="card wide" id="c-submissions">
+    <p class="eyebrow">Transaction outcomes</p>
+    <div id="submissions-body" class="empty">loading…</div>
+  </section>
+
+  <!-- 6. Decision log -->
+  <section class="card wide" id="c-decisions">
+    <p class="eyebrow">Decision log</p>
+    <div id="decisions-body" class="empty">loading…</div>
+  </section>
+
+  <!-- 7. History / settlements -->
+  <section class="card wide" id="c-settlements">
+    <p class="eyebrow">Observed settlements</p>
+    <div id="settlements-body" class="empty">loading…</div>
+  </section>
+
+  <!-- 15. Configuration with drift + availability overlays -->
+  <section class="card wide" id="c-config">
+    <p class="eyebrow">Configuration</p>
+    <div id="config-body" class="empty">loading…</div>
+  </section>
+</main>
+
+<footer>
+  Read-only. Every action — rotation, guardian updates, the accepting toggle — stays in the CLI.
+  History panels cover this process only and reset on restart; durable trends live in Prometheus/Grafana.
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
