@@ -1,0 +1,34 @@
+# Accepted govulncheck advisories — reachable findings that CANNOT be fixed by
+# bumping a dependency. Every entry needs a reason and an exit condition,
+# exactly like the carried pins, and the whole file is re-audited on every T2
+# upgrade.
+#
+# Adding an entry here is a last resort: if a fixed release exists, bump the
+# module instead.
+
+# golang.org/x/crypto/openpgp is unmaintained BY DESIGN — the advisory is
+# permanent, no fixed version will ever exist ("Fixed in: N/A"), and this module
+# is already on the latest x/crypto.
+#
+# THE REACHABILITY PATH HERE IS NOT THE CHAIN'S. The chain accepts the same
+# advisory because cosmos-sdk x/upgrade -> hashicorp/go-getter links openpgp for
+# detached-signature verification of upgrade artefacts — a path timeflared never
+# invokes. That justification does NOT transfer to guardiand, which reaches it by
+#
+#   blockchain/keys.go -> cosmos-sdk keyring -> openpgp/armor
+#
+# — the file-backed keyring's ASCII-armour encoding, which guardiand genuinely
+# uses to store custody keys. This is a live code path, not dead weight, and it
+# is recorded as such rather than inheriting a "never invoked" claim that would
+# be false here.
+#
+# Why it is accepted regardless: the advisory is a maintenance warning about the
+# package's status, not a specific exploitable defect, and the armour layer is an
+# encoding of material already protected by the keyring passphrase. The exposure
+# is what an unmaintained dependency implies for future fixes, not a break today.
+#
+# Exit: when cosmos-sdk's keyring drops openpgp/armor, or when x/crypto removes
+# the package and forces the issue. Re-check on every cosmos-sdk bump — this
+# entry is tied to the SDK's keyring implementation, so an SDK upgrade can retire
+# it.
+GO-2026-5932

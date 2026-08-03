@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Dependabot's github-actions PRs touch only .github/workflows/**. Without a
+  # job that always runs, they would merge with zero CI.
+  workflows:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run actionlint
+        run: |
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
+  guardian:
+    name: Guardian (verify + test)
+    needs: workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # No credentials: both modules this repository consumes —
+      # github.com/timeflareio/chain/x/secrets/types and
+      # github.com/timeflareio/crypto — are public, so they resolve through the
+      # module proxy with the checksum database intact.
+      - name: Install golangci-lint (prebuilt release binary)
+        # make verify's fallback compiles golangci-lint from source via
+        # `go install` — minutes on a cold cache. The pinned release binary
+        # installs in seconds; keep the version in lockstep with
+        # GOLANGCI_LINT_VERSION in make/go-quality.mk and .golangci.yml.
+        # Downloaded directly with a pinned sha256: the upstream install.sh
+        # mis-verifies v2 releases (its checksum lookup matches by substring and
+        # can pick up the newer .sbom.json asset, hashing the wrong file).
+        run: |
+          curl -sSfLO --retry 5 --retry-delay 2 --retry-all-errors \
+            https://github.com/golangci/golangci-lint/releases/download/v2.12.2/golangci-lint-2.12.2-linux-amd64.tar.gz
+          echo "8df580d2670fed8fa984aac0507099af8df275e665215f5c7a2ae3943893a553  golangci-lint-2.12.2-linux-amd64.tar.gz" | sha256sum -c -
+          tar xzf golangci-lint-2.12.2-linux-amd64.tar.gz
+          install golangci-lint-2.12.2-linux-amd64/golangci-lint "$(go env GOPATH)/bin/"
+
+      # verify includes verify-pins, which fetches the chain's go.mod at the
+      # pinned x/secrets/types version and diffs the carried replace directives.
+      # That is the check standing between this daemon and timeflared silently
+      # building against different cosmos-sdk versions.
+      - name: Verify code quality, boundaries and carried pins
+        env:
+          GOTOOLCHAIN: auto
+        run: make verify
+
+      - name: Run unit tests
+        run: make test
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      # The GATED scan, not the raw one. This module carries a permanently
+      # unfixable advisory (openpgp via the SDK keyring — see
+      # .govulncheck-accepted), so `make go-govulncheck` can never pass and would
+      # make this job a permanent red that everyone learns to ignore. The gate
+      # fails only on findings that are NOT accepted, and still prints the
+      # accepted ones so they stay visible.
+      - name: Audit Go dependencies (gated)
+        env:
+          GOTOOLCHAIN: auto
+        run: make govulncheck-gated

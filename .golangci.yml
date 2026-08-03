@@ -1,0 +1,23 @@
+# golangci-lint v2 configuration — one file at the repo root; runs in the
+# this module. Keep GOLANGCI_LINT_VERSION (make/go-quality.mk) and the CI
+# install steps (.github/workflows/ci.yml) in lockstep with the version
+# this file targets.
+#
+# Intent: v1-parity. The v2 upgrade (forced by the Go 1.25 language target —
+# v1.64.8 release binaries are built with go1.24 and refuse it) enables new
+# style/quickfix check families by default; this config restores the v1
+# lint surface rather than churning a working codebase for style opinions.
+version: "2"
+
+linters:
+  settings:
+    staticcheck:
+      # v1 shipped staticcheck (SA*) + gosimple (S1*); the ST* style and
+      # QF* quickfix families arrived with the v2 staticcheck merge.
+      checks: ["all", "-QF*", "-ST*"]
+  exclusions:
+    # std-error-handling restores v1's default errcheck exclusions
+    # (deferred Close, fmt printing, os.Remove, …).
+    presets:
+      - common-false-positives
+      - std-error-handling

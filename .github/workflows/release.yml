@@ -1,0 +1,163 @@
+name: Release
+
+# Releases are deliberate: pushing a vX.Y.Z tag is the only trigger.
+#
+# Two artefact kinds, because guardian operators are third parties who need to
+# run this daemon without a Go toolchain: binaries for the four host
+# combinations, and a distroless image for container deployments (which the
+# chain's compose devnet pins).
+#
+# Binaries are released rather than left to `go install`: this module carries
+# `replace` directives for the cosmos-sdk pin set, and `go install mod@version`
+# refuses any module whose go.mod has replaces. That is not a limitation to work
+# around — it is why release assets exist here.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  verify:
+    name: Verify before releasing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Enforce the version policy
+        # This module is deliberately pre-1.0. A tag outside 0.x is far more
+        # likely to be a slip than a decision, and published tags cannot be
+        # unpublished — so crossing to 1.0 is a two-step act: change this guard,
+        # then tag.
+        run: |
+          set -euo pipefail
+          case "${GITHUB_REF_NAME}" in
+            v0.*) echo "✅ ${GITHUB_REF_NAME} is within the 0.x policy" ;;
+            *)
+              echo "::error::${GITHUB_REF_NAME} crosses out of 0.x, which this repository is not ready for. 0.x means no compatibility promise; going to 1.0.0 needs the version policy updated and this guard relaxed in the same change."
+              exit 1
+              ;;
+          esac
+
+      - name: Install golangci-lint (prebuilt release binary)
+        run: |
+          curl -sSfLO --retry 5 --retry-delay 2 --retry-all-errors \
+            https://github.com/golangci/golangci-lint/releases/download/v2.12.2/golangci-lint-2.12.2-linux-amd64.tar.gz
+          echo "8df580d2670fed8fa984aac0507099af8df275e665215f5c7a2ae3943893a553  golangci-lint-2.12.2-linux-amd64.tar.gz" | sha256sum -c -
+          tar xzf golangci-lint-2.12.2-linux-amd64.tar.gz
+          install golangci-lint-2.12.2-linux-amd64/golangci-lint "$(go env GOPATH)/bin/"
+
+      # verify-pins is the one that matters for a release: shipping a guardiand
+      # built against a different cosmos-sdk than timeflared is a wire-behaviour
+      # divergence no test here would catch.
+      - name: Verify
+        env:
+          GOTOOLCHAIN: auto
+        run: make verify
+
+      - name: Test
+        run: make test
+
+  binaries:
+    name: Build and attach binaries
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cross-compile
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
+            os="${target%%/*}"; arch="${target##*/}"
+            out="guardiand-${GITHUB_REF_NAME}-${os}-${arch}"
+            echo "--> ${out}"
+            CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" go build -trimpath \
+              -ldflags "-X github.com/cosmos/cosmos-sdk/version.Name=guardian \
+                        -X github.com/cosmos/cosmos-sdk/version.AppName=guardiand \
+                        -X github.com/cosmos/cosmos-sdk/version.Version=${GITHUB_REF_NAME} \
+                        -X github.com/cosmos/cosmos-sdk/version.Commit=${GITHUB_SHA}" \
+              -o "dist/${out}" ./cmd/guardiand
+          done
+          ( cd dist && sha256sum guardiand-* > "guardiand-${GITHUB_REF_NAME}-checksums.txt" )
+          ls -la dist/
+
+      - name: Compose release notes
+        run: |
+          set -euo pipefail
+          pin="$(grep -v '^#' testdata/vectors/CHAIN_VECTORS_VERSION | head -1)"
+          types_ver="$(go list -m -f '{{.Version}}' github.com/timeflareio/chain/x/secrets/types)"
+          crypto_ver="$(go list -m -f '{{.Version}}' github.com/timeflareio/crypto)"
+          {
+            echo "## Artefacts"
+            echo
+            echo "| Artefact | How to consume |"
+            echo "|---|---|"
+            echo "| Binaries | \`guardiand-${GITHUB_REF_NAME}-{darwin,linux}-{arm64,amd64}\` below, with \`checksums.txt\` |"
+            echo "| Container image | \`ghcr.io/timeflareio/guardiand:${GITHUB_REF_NAME}\` (distroless) |"
+            echo
+            echo "\`go install\` cannot serve this module: it carries \`replace\`"
+            echo "directives for the cosmos-sdk pin set, and Go refuses to install any"
+            echo "module whose go.mod has replaces. Use the assets above."
+            echo
+            echo "## Built against"
+            echo
+            echo "| Dependency | Version |"
+            echo "|---|---|"
+            echo "| \`chain/x/secrets/types\` (wire contract) | \`${types_ver}\` |"
+            echo "| \`crypto\` (primitives) | \`${crypto_ver}\` |"
+            echo "| chain vector corpus | \`${pin}\` |"
+            echo
+            echo "\`make verify\` passed on this commit, which includes \`verify-pins\` —"
+            echo "the carried cosmos-sdk \`replace\` block matches the chain's at the pinned"
+            echo "wire-contract version. A mismatch there would mean this daemon and"
+            echo "\`timeflared\` build against different dependency versions."
+            echo
+            echo "## Compatibility"
+            echo
+            echo "While on 0.x there is no compatibility promise. Run this against a chain"
+            echo "whose wire contract matches the version above."
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            dist/*
+
+  image:
+    name: Build and push the distroless image
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+          tags: ghcr.io/timeflareio/guardiand:${{ github.ref_name }}

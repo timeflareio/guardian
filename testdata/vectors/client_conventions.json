@@ -1,0 +1,243 @@
+{
+  "_description": "Client-conventions corpus (docs/guides/CLIENT_CONVENTIONS.md): recipient URI (\u00a73), claim URI (\u00a74), identity-key backup mnemonic (\u00a75), fund URI (\u00a78). Append-only, like every corpus in this directory: new vectors may be added, existing vectors are never edited or removed. Every client implementation asserts all sections in CI. The mnemonic section is anchored to the published BIP39 reference test vectors (32-byte entropy rows).",
+  "version": 1,
+  "recipient_uri": [
+    {
+      "name": "sequential key bytes",
+      "public_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "uri": "timeflare:recipient/tfid1qyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p7c5chyj"
+    },
+    {
+      "name": "fixed key A",
+      "public_key_hex": "c0ffee0011223344556677889900aabbccddeeff00112233445566778899aabb",
+      "uri": "timeflare:recipient/tfid1q8q0lmsqzy3rx3z4vemc3xgq42aueh0wluqpzg3ng32kvaugnx4tklw2hzk"
+    },
+    {
+      "name": "all-zero key (encoding edge, not a real key)",
+      "public_key_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "uri": "timeflare:recipient/tfid1qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqelyntv"
+    },
+    {
+      "name": "all-ff key (encoding edge, not a real key)",
+      "public_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "uri": "timeflare:recipient/tfid1q8llllllllllllllllllllllllllllllllllllllllllllllllll7d4syf0"
+    }
+  ],
+  "recipient_uri_invalid": [
+    {
+      "name": "bech32 (not bech32m) checksum rejected",
+      "input": "tfid1qyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p7dggmps",
+      "reason": "bech32m checksum required"
+    },
+    {
+      "name": "unknown version byte 0x02 rejected",
+      "input": "tfid1qgqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p7luwlpz",
+      "reason": "unknown payload version \u2014 update your client"
+    },
+    {
+      "name": "truncated payload rejected",
+      "input": "tfid1qyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50qdz2gp4",
+      "reason": "payload must be 33 bytes"
+    },
+    {
+      "name": "mangled checksum rejected",
+      "input": "tfid1qyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p7c5chyq",
+      "reason": "invalid bech32m checksum"
+    },
+    {
+      "name": "claim payload (tfsk) rejected as recipient",
+      "input": "tfsk1q8q0lmsqzy3rx3z4vemc3xgq42aueh0wluqpzg3ng32kvaugnx4tk23z8p8",
+      "reason": "wrong HRP"
+    }
+  ],
+  "claim_uri": [
+    {
+      "name": "with secret id",
+      "private_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "secret_id": "9f1b2c3d-4e5f-4a1b-8c2d-3e4f5a6b7c8d",
+      "uri": "timeflare:claim/tfsk1qyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p7dts88r?id=9f1b2c3d-4e5f-4a1b-8c2d-3e4f5a6b7c8d"
+    },
+    {
+      "name": "without secret id (degrades to discovery)",
+      "private_key_hex": "c0ffee0011223344556677889900aabbccddeeff00112233445566778899aabb",
+      "secret_id": null,
+      "uri": "timeflare:claim/tfsk1q8q0lmsqzy3rx3z4vemc3xgq42aueh0wluqpzg3ng32kvaugnx4tk23z8p8"
+    },
+    {
+      "name": "funded kit: version 2 with a courier seed",
+      "private_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "secret_id": "9f1b2c3d-4e5f-4a1b-8c2d-3e4f5a6b7c8d",
+      "courier_key_hex": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "version": 2,
+      "uri": "timeflare:claim/tfsk1qgqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p72rx0zn?id=9f1b2c3d-4e5f-4a1b-8c2d-3e4f5a6b7c8d&seed=tfck1qxsm9s75uhmqwxpf8f94cmt737g2rvkr6njlvpcc9yaykhrd068eqynncxp"
+    },
+    {
+      "name": "funded kit without a secret id",
+      "private_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "secret_id": null,
+      "courier_key_hex": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "version": 2,
+      "uri": "timeflare:claim/tfsk1qgqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p72rx0zn?seed=tfck1qxsm9s75uhmqwxpf8f94cmt737g2rvkr6njlvpcc9yaykhrd068eqynncxp"
+    }
+  ],
+  "claim_uri_invalid": [
+    {
+      "name": "version 2 declaring a funded kit but carrying no seed rejected",
+      "input": "timeflare:claim/tfsk1qgqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p72rx0zn?id=9f1b2c3d-4e5f-4a1b-8c2d-3e4f5a6b7c8d",
+      "reason": "the version byte promised a courier and none arrived \u2014 the link is incomplete, and guessing would abandon the funds"
+    },
+    {
+      "name": "recipient payload (tfid) rejected as claim",
+      "input": "timeflare:claim/tfid1qyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p7c5chyj",
+      "reason": "wrong HRP"
+    },
+    {
+      "name": "bare payload without the claim prefix rejected",
+      "input": "tfsk1q8q0lmsqzy3rx3z4vemc3xgq42aueh0wluqpzg3ng32kvaugnx4tk23z8p8",
+      "reason": "claim URIs must carry the full timeflare:claim/ prefix (private key material is never accepted bare)"
+    },
+    {
+      "name": "unknown version byte 0x03 rejected",
+      "input": "timeflare:claim/tfsk1qvqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p7sunspy",
+      "reason": "unknown payload version \u2014 update your client"
+    },
+    {
+      "name": "version 1 carrying a seed rejected",
+      "input": "timeflare:claim/tfsk1qyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p7dts88r?id=9f1b2c3d-4e5f-4a1b-8c2d-3e4f5a6b7c8d&seed=tfck1qxsm9s75uhmqwxpf8f94cmt737g2rvkr6njlvpcc9yaykhrd068eqynncxp",
+      "reason": "a seed on an unseeded version means the link was rewritten in transit"
+    },
+    {
+      "name": "funded kit with an undecodable seed rejected, not degraded",
+      "input": "timeflare:claim/tfsk1qgqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p72rx0zn?id=9f1b2c3d-4e5f-4a1b-8c2d-3e4f5a6b7c8d&seed=tfck1notavalidbech32mpayload",
+      "reason": "unlike a stale id, a damaged seed must fail the import rather than silently drop funds"
+    },
+    {
+      "name": "funded kit whose seed carries the identity HRP rejected",
+      "input": "timeflare:claim/tfsk1qgqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p72rx0zn?id=9f1b2c3d-4e5f-4a1b-8c2d-3e4f5a6b7c8d&seed=tfsk1qyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p7dts88r",
+      "reason": "a courier key is tfck; accepting tfsk here would conflate the two key roles"
+    }
+  ],
+  "mnemonic": [
+    {
+      "name": "BIP39 reference vector 1 (32-byte entropy)",
+      "private_key_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "words": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+    },
+    {
+      "name": "BIP39 reference vector 2 (32-byte entropy)",
+      "private_key_hex": "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+      "words": "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title"
+    },
+    {
+      "name": "BIP39 reference vector 3 (32-byte entropy)",
+      "private_key_hex": "8080808080808080808080808080808080808080808080808080808080808080",
+      "words": "letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic bless"
+    },
+    {
+      "name": "BIP39 reference vector 4 (32-byte entropy)",
+      "private_key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "words": "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo vote"
+    },
+    {
+      "name": "sequential key bytes",
+      "private_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "words": "abandon amount liar amount expire adjust cage candy arch gather drum bullet absurd math era live bid rhythm alien crouch range attend journey unaware"
+    },
+    {
+      "name": "fixed key A",
+      "private_key_hex": "c0ffee0011223344556677889900aabbccddeeff00112233445566778899aabb",
+      "words": "science youth length car case peasant few solve mass siege click jealous soccer wash winter acquire captain olive best smooth joy error priority leader"
+    }
+  ],
+  "mnemonic_invalid": [
+    {
+      "name": "23 words rejected",
+      "words": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon",
+      "reason": "exactly 24 words"
+    },
+    {
+      "name": "checksum failure rejected (last word swapped)",
+      "words": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon zoo",
+      "reason": "BIP39 checksum"
+    },
+    {
+      "name": "non-wordlist word rejected",
+      "words": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon blockchain",
+      "reason": "not in the English wordlist"
+    }
+  ],
+  "fund_uri": [
+    {
+      "name": "address only",
+      "address": "tmflr1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnyf6e3x",
+      "amount_uveil": null,
+      "uri": "timeflare:fund/tmflr1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnyf6e3x"
+    },
+    {
+      "name": "address with requested amount",
+      "address": "tmflr1gpq5ys6yg4rywjzfff95cn2wfag9z5jn90kqn4",
+      "amount_uveil": "100000",
+      "uri": "timeflare:fund/tmflr1gpq5ys6yg4rywjzfff95cn2wfag9z5jn90kqn4?amount=100000"
+    }
+  ],
+  "fund_uri_parse_only": [
+    {
+      "name": "bare address accepted for manual paste",
+      "input": "tmflr1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnyf6e3x",
+      "address": "tmflr1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnyf6e3x",
+      "amount_uveil": null
+    },
+    {
+      "name": "uppercase URI accepted, address normalised to lowercase",
+      "input": "TIMEFLARE:FUND/TMFLR1QQQSYQCYQ5RQWZQFPG9SCRGWPUGPZYSNYF6E3X",
+      "address": "tmflr1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnyf6e3x",
+      "amount_uveil": null
+    },
+    {
+      "name": "non-numeric amount degrades to no amount",
+      "input": "timeflare:fund/tmflr1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnyf6e3x?amount=lots",
+      "address": "tmflr1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnyf6e3x",
+      "amount_uveil": null
+    },
+    {
+      "name": "hex amount degrades to no amount",
+      "input": "timeflare:fund/tmflr1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnyf6e3x?amount=0x10",
+      "address": "tmflr1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnyf6e3x",
+      "amount_uveil": null
+    },
+    {
+      "name": "zero amount degrades to no amount",
+      "input": "timeflare:fund/tmflr1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnyf6e3x?amount=0",
+      "address": "tmflr1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnyf6e3x",
+      "amount_uveil": null
+    },
+    {
+      "name": "unknown query parameters ignored",
+      "input": "timeflare:fund/tmflr1gpq5ys6yg4rywjzfff95cn2wfag9z5jn90kqn4?memo=hi&amount=25",
+      "address": "tmflr1gpq5ys6yg4rywjzfff95cn2wfag9z5jn90kqn4",
+      "amount_uveil": "25"
+    }
+  ],
+  "fund_uri_invalid": [
+    {
+      "name": "broken address checksum rejected",
+      "input": "timeflare:fund/tmflr1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnyf6e3q",
+      "reason": "bech32 checksum failure"
+    },
+    {
+      "name": "another chain's address rejected",
+      "input": "timeflare:fund/cosmos1qqqsyqcyq5rqwzqfpg9scrgwpugpzysnrk363e",
+      "reason": "wrong bech32 prefix"
+    },
+    {
+      "name": "identity key is not an account address",
+      "input": "timeflare:fund/tfid1qyqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcur50p7c5chyj",
+      "reason": "wrong bech32 prefix"
+    },
+    {
+      "name": "empty address rejected",
+      "input": "timeflare:fund/",
+      "reason": "not a valid account address"
+    }
+  ]
+}
