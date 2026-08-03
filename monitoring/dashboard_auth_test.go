@@ -196,7 +196,7 @@ func TestDashboardServesOverTLSWhenConfigured(t *testing.T) {
 
 	var res *http.Response
 	var err error
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(listenerReadyTimeout)
 	for time.Now().Before(deadline) {
 		req, buildErr := http.NewRequest(http.MethodGet, url, nil)
 		if buildErr != nil {

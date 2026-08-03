@@ -24,6 +24,17 @@ import (
 // fakeSource is a minimal dashboard.Source.
 type fakeSource struct{}
 
+// listenerReadyTimeout bounds how long a test waits for a freshly started
+// listener to accept a connection. It is deliberately generous.
+//
+// These are readiness polls, not latency assertions: the loop breaks on the
+// first success, so a longer bound costs a passing test nothing and only changes
+// how long a genuinely broken listener takes to report. The previous 3s was fine
+// on a developer machine and marginal on a loaded CI runner under -race, where it
+// failed a release: the TLS dashboard test timed out at 3.05s having never been
+// given a chance to bind.
+const listenerReadyTimeout = 30 * time.Second
+
 func (fakeSource) Vitals(context.Context) dashboard.Vitals {
 	return dashboard.Vitals{ChainID: "timeflare-test", Running: true}
 }
@@ -76,7 +87,7 @@ func startService(t *testing.T, cfg *config.Config, src dashboard.Source) (*Serv
 	go func() { errCh <- svc.Start(ctx) }()
 
 	// Bind is synchronous inside Start, but Serve is not — poll briefly.
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(listenerReadyTimeout)
 	for time.Now().Before(deadline) {
 		select {
 		case err := <-errCh:
@@ -214,7 +225,7 @@ func TestShutdownClosesTheDashboardListener(t *testing.T) {
 
 	// After shutdown the port must be free — a listener left behind would block
 	// the next start with a confusing bind error.
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(listenerReadyTimeout)
 	for time.Now().Before(deadline) {
 		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.DashboardPort))
 		if err == nil {
