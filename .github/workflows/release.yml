@@ -102,7 +102,7 @@ jobs:
       - name: Assert the binaries report this tag
         run: |
           set -euo pipefail
-          reported="$(./dist/guardiand-${GITHUB_REF_NAME}-linux-amd64 version | awk '/^Version:/{print $2}')"
+          reported="$("./dist/guardiand-${GITHUB_REF_NAME}-linux-amd64" version | awk '/^Version:/{print $2}')"
           echo "reported: ${reported}"
           if [ "${reported}" != "${GITHUB_REF_NAME}" ]; then
             echo "::error::binary reports '${reported}' but this release is '${GITHUB_REF_NAME}'. The version is derived from git at build time, so this usually means the tag was not reachable from the checkout (fetch-depth) or .git was absent."
