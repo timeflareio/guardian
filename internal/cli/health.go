@@ -36,6 +36,7 @@ making it suitable for scripts and process supervisors.`,
 }
 
 func runHealth(cmd *cobra.Command, args []string) error {
+	u := printer(cmd)
 	url, _ := cmd.Flags().GetString("url")
 	timeout, _ := cmd.Flags().GetInt("timeout")
 
@@ -51,10 +52,10 @@ func runHealth(cmd *cobra.Command, args []string) error {
 
 	status, err := monitoring.CheckHealth(cmd.Context(), url, time.Duration(timeout)*time.Second)
 	if err != nil {
-		printError("Guardian is unhealthy: %v\n", err)
+		u.Error("Guardian is unhealthy: %v\n", err)
 		return err
 	}
 
-	printSuccess("Guardian is %s (checked %s/health at %s)\n", status.Status, url, status.Timestamp)
+	u.Success("Guardian is %s (checked %s/health at %s)\n", status.Status, url, status.Timestamp)
 	return nil
 }

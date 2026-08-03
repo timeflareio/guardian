@@ -6,6 +6,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/timeflareio/guardian/internal/chain"
+	"github.com/timeflareio/guardian/internal/cli/ui"
 	"github.com/timeflareio/guardian/internal/config"
 )
 
@@ -54,6 +55,7 @@ future assignments.`,
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
+	u := printer(cmd)
 	_, cfg, err := requireConfig(cmd)
 	if err != nil {
 		return err
@@ -96,8 +98,8 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show update and get confirmation (unless auto-accept is enabled)
-	if !autoAccept && !showUpdateAndConfirm(cfg, stakeAmount, availableFrom, availableUntil, acceptingSecrets, availableFromFlag, availableUntilFlag, stakeFlag, acceptingSecretsFlag) {
-		printNote("Update cancelled.")
+	if !autoAccept && !showUpdateAndConfirm(u, cfg, stakeAmount, availableFrom, availableUntil, acceptingSecrets, availableFromFlag, availableUntilFlag, stakeFlag, acceptingSecretsFlag) {
+		u.Note("Update cancelled.")
 		return nil
 	}
 
@@ -118,29 +120,29 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(err, "update failed")
 	}
 
-	showUpdateSuccess(cfg, txHash)
+	showUpdateSuccess(u, cfg, txHash)
 	return nil
 }
 
-func showUpdateAndConfirm(cfg *config.Config, stakeAmount string, availableFrom, availableUntil int64, acceptingSecrets bool, availableFromFlag, availableUntilFlag, stakeFlag, acceptingSecretsFlag bool) bool {
+func showUpdateAndConfirm(u *ui.Printer, cfg *config.Config, stakeAmount string, availableFrom, availableUntil int64, acceptingSecrets bool, availableFromFlag, availableUntilFlag, stakeFlag, acceptingSecretsFlag bool) bool {
 	headerColor := color.New(color.FgGreen, color.Bold)
 	sectionColor := color.New(color.FgYellow, color.Bold)
 	valueColor := color.New(color.FgCyan)
 	updateColor := color.New(color.FgYellow)
 
-	printEmptyLine()
+	u.EmptyLine()
 	headerColor.Println("🔄 Guardian Registration Update Preview")
 	headerColor.Println("═══════════════════════════════════════")
-	printEmptyLine()
+	u.EmptyLine()
 
 	sectionColor.Println("📋 Update Details:")
-	printEmptyLine()
+	u.EmptyLine()
 
-	printText("   • Guardian Key:        ")
+	u.Text("   • Guardian Key:        ")
 	valueColor.Printf("%s\n", cfg.KeyName)
 
 	if availableFromFlag {
-		printText("   • Available From:      ")
+		u.Text("   • Available From:      ")
 		if availableFrom == 0 {
 			valueColor.Print("Current block + 1")
 		} else {
@@ -150,19 +152,19 @@ func showUpdateAndConfirm(cfg *config.Config, stakeAmount string, availableFrom,
 	}
 
 	if availableUntilFlag {
-		printText("   • Available Until:     ")
+		u.Text("   • Available Until:     ")
 		valueColor.Printf("Current block + %d", availableUntil)
 		updateColor.Printf(" (UPDATED)\n")
 	}
 
 	if stakeFlag {
-		printText("   • Float Addition:      ")
+		u.Text("   • Float Addition:      ")
 		valueColor.Print(stakeAmount)
 		updateColor.Printf(" (UPDATED)\n")
 	}
 
 	if acceptingSecretsFlag {
-		printText("   • Accepting Secrets:   ")
+		u.Text("   • Accepting Secrets:   ")
 		if acceptingSecrets {
 			valueColor.Print("Yes")
 		} else {
@@ -171,24 +173,24 @@ func showUpdateAndConfirm(cfg *config.Config, stakeAmount string, availableFrom,
 		updateColor.Printf(" (UPDATED)\n")
 	}
 
-	printEmptyLine()
+	u.EmptyLine()
 	sectionColor.Println("⚠️  This will:")
-	printTextLn("   • Sign MsgGuardianUpdate with your keyring key and broadcast it")
-	printTextLn("   • Apply only the parameters marked UPDATED — others remain unchanged")
-	printEmptyLine()
+	u.TextLn("   • Sign MsgGuardianUpdate with your keyring key and broadcast it")
+	u.TextLn("   • Apply only the parameters marked UPDATED — others remain unchanged")
+	u.EmptyLine()
 
-	return promptForConfirmation("Execute this update?")
+	return u.Confirm("Execute this update?")
 }
 
-func showUpdateSuccess(cfg *config.Config, txHash string) {
-	printEmptyLine()
-	printTextLn("✅ Guardian Update Broadcast Successfully!")
-	printTextLn("═══════════════════════════════════════")
-	printEmptyLine()
-	printf("   • Transaction: %s\n", txHash)
-	printf("   • Chain ID:    %s\n", cfg.ChainID)
-	printEmptyLine()
-	printTextLn("📋 Next Steps:")
-	printTextLn("   • Use 'guardiand status' to verify your updated registration")
-	printEmptyLine()
+func showUpdateSuccess(u *ui.Printer, cfg *config.Config, txHash string) {
+	u.EmptyLine()
+	u.TextLn("✅ Guardian Update Broadcast Successfully!")
+	u.TextLn("═══════════════════════════════════════")
+	u.EmptyLine()
+	u.Printf("   • Transaction: %s\n", txHash)
+	u.Printf("   • Chain ID:    %s\n", cfg.ChainID)
+	u.EmptyLine()
+	u.TextLn("📋 Next Steps:")
+	u.TextLn("   • Use 'guardiand status' to verify your updated registration")
+	u.EmptyLine()
 }

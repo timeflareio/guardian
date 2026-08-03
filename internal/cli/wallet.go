@@ -3,6 +3,7 @@ package cli
 import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"github.com/timeflareio/guardian/internal/cli/ui"
 
 	"github.com/timeflareio/guardian/internal/chain"
 	"github.com/timeflareio/guardian/internal/config"
@@ -75,6 +76,7 @@ securely; it is the only way to recover the key and any balance it holds.`,
 }
 
 func runWalletCreate(cmd *cobra.Command, args []string) error {
+	u := printer(cmd)
 	_, effective, err := optionalConfig(cmd)
 	if err != nil {
 		return err
@@ -89,23 +91,23 @@ func runWalletCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	printEmptyLine()
-	printSuccess("Created signing key %s", name)
-	printText(indent1 + "Address: ")
-	printCommand("%s\n", address)
-	printText(indent1 + "HD path: ")
-	printCommand("%s\n", chain.WalletHDPath())
-	printEmptyLine()
-	printNote("Backup mnemonic — shown ONCE, never stored by the daemon:")
-	printEmptyLine()
-	printTextLn(indent1 + mnemonic)
-	printEmptyLine()
-	printNote("Write the 24 words down and store them securely. Anyone holding")
-	printNote("them controls this key's balance; without them a lost keyring is")
-	printNote("unrecoverable. The same words restore the same account in any")
-	printNote("Timeflare wallet ('guardiand wallet import-from-mnemonic',")
-	printNote("'timeflared keys add --recover', or the mobile app).")
-	printEmptyLine()
+	u.EmptyLine()
+	u.Success("Created signing key %s", name)
+	u.Text(ui.Indent1 + "Address: ")
+	u.Command("%s\n", address)
+	u.Text(ui.Indent1 + "HD path: ")
+	u.Command("%s\n", chain.WalletHDPath())
+	u.EmptyLine()
+	u.Note("Backup mnemonic — shown ONCE, never stored by the daemon:")
+	u.EmptyLine()
+	u.TextLn(ui.Indent1 + mnemonic)
+	u.EmptyLine()
+	u.Note("Write the 24 words down and store them securely. Anyone holding")
+	u.Note("them controls this key's balance; without them a lost keyring is")
+	u.Note("unrecoverable. The same words restore the same account in any")
+	u.Note("Timeflare wallet ('guardiand wallet import-from-mnemonic',")
+	u.Note("'timeflared keys add --recover', or the mobile app).")
+	u.EmptyLine()
 	return nil
 }
 
@@ -124,6 +126,7 @@ resolve to the same account everywhere.`,
 }
 
 func runWalletImport(cmd *cobra.Command, args []string) error {
+	u := printer(cmd)
 	_, effective, err := optionalConfig(cmd)
 	if err != nil {
 		return err
@@ -133,7 +136,7 @@ func runWalletImport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	mnemonic := promptForInput(indent1 + "Enter the 24-word mnemonic: ")
+	mnemonic := u.PromptInput(ui.Indent1 + "Enter the 24-word mnemonic: ")
 	if mnemonic == "" {
 		return errors.New("no mnemonic entered")
 	}
@@ -143,14 +146,14 @@ func runWalletImport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	printEmptyLine()
-	printSuccess("Imported signing key %s", name)
-	printText(indent1 + "Address: ")
-	printCommand("%s\n", address)
-	printEmptyLine()
-	printNote("Verify this address is the one you expected — a wrong or")
-	printNote("mistyped phrase derives a different, empty account.")
-	printEmptyLine()
+	u.EmptyLine()
+	u.Success("Imported signing key %s", name)
+	u.Text(ui.Indent1 + "Address: ")
+	u.Command("%s\n", address)
+	u.EmptyLine()
+	u.Note("Verify this address is the one you expected — a wrong or")
+	u.Note("mistyped phrase derives a different, empty account.")
+	u.EmptyLine()
 	return nil
 }
 
@@ -168,6 +171,7 @@ replacement for 'timeflared keys show -a'.`,
 }
 
 func runWalletShowAddress(cmd *cobra.Command, args []string) error {
+	u := printer(cmd)
 	_, effective, err := optionalConfig(cmd)
 	if err != nil {
 		return err
@@ -181,6 +185,6 @@ func runWalletShowAddress(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	printf("%s\n", address)
+	u.Printf("%s\n", address)
 	return nil
 }

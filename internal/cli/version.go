@@ -21,17 +21,18 @@ func NewVersionCmd() *cobra.Command {
 }
 
 func runVersion(cmd *cobra.Command, args []string) {
+	u := printer(cmd)
 	rev, modified := buildRevision()
-	printf("Timeflare Guardian Service\n")
-	printf("Version:    %s\n", buildVersion())
+	u.Printf("Timeflare Guardian Service\n")
+	u.Printf("Version:    %s\n", buildVersion())
 	if rev != "" {
 		state := "clean"
 		if modified {
 			state = "modified"
 		}
-		printf("Revision:   %s (%s)\n", rev, state)
+		u.Printf("Revision:   %s (%s)\n", rev, state)
 	}
-	printf("Go Version: %s\n", runtime.Version())
-	printf("OS/Arch:    %s/%s\n", runtime.GOOS, runtime.GOARCH)
-	printEmptyLine()
+	u.Printf("Go Version: %s\n", runtime.Version())
+	u.Printf("OS/Arch:    %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	u.EmptyLine()
 }

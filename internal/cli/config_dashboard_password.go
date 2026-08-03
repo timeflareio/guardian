@@ -10,6 +10,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"github.com/timeflareio/guardian/internal/cli/ui"
 
 	"github.com/timeflareio/guardian/internal/config"
 	"github.com/timeflareio/guardian/internal/dashboard"
@@ -61,6 +62,7 @@ command-line argument, because arguments land in shell history and in ps.`,
 }
 
 func runConfigSetDashboardPassword(cmd *cobra.Command, generate, fromStdin bool) error {
+	u := printer(cmd)
 	if generate && fromStdin {
 		return errors.New("--generate and --stdin are mutually exclusive")
 	}
@@ -77,7 +79,7 @@ func runConfigSetDashboardPassword(cmd *cobra.Command, generate, fromStdin bool)
 	case fromStdin:
 		password, err = readPasswordFromStdin()
 	default:
-		password, err = promptForDashboardPassword()
+		password, err = promptForDashboardPassword(u)
 	}
 	if err != nil {
 		return err
@@ -98,21 +100,21 @@ func runConfigSetDashboardPassword(cmd *cobra.Command, generate, fromStdin bool)
 		// stdout, once, and never the log: this is the only moment the password
 		// exists anywhere. Printed before the advisories so it cannot scroll off
 		// behind them.
-		printEmptyLine()
-		printNote("Dashboard password (shown once — store it now):")
-		printf("%s\n", password)
+		u.EmptyLine()
+		u.Note("Dashboard password (shown once — store it now):")
+		u.Printf("%s\n", password)
 	}
 
-	printEmptyLine()
-	printSuccess("Dashboard password set (stored as a bcrypt hash)")
-	printNote("Sign in as user %q.", dashboard.Username)
+	u.EmptyLine()
+	u.Success("Dashboard password set (stored as a bcrypt hash)")
+	u.Note("Sign in as user %q.", dashboard.Username)
 
 	effective := manager.GetConfig()
 	if effective.DashboardAuthRequired() && !effective.DashboardTLSEnabled() {
-		printNote("Not encrypted: Basic auth defends against unauthorised readers, not against a network eavesdropper.")
-		printNote("Set dashboard_tls_cert_file and dashboard_tls_key_file, or front the port with a TLS proxy.")
+		u.Note("Not encrypted: Basic auth defends against unauthorised readers, not against a network eavesdropper.")
+		u.Note("Set dashboard_tls_cert_file and dashboard_tls_key_file, or front the port with a TLS proxy.")
 	}
-	printEmptyLine()
+	u.EmptyLine()
 	return nil
 }
 
@@ -122,25 +124,25 @@ func runConfigSetDashboardPassword(cmd *cobra.Command, generate, fromStdin bool)
 // It never fails `config doctor`: a withheld dashboard is a page an operator
 // cannot open, not a guardian that cannot reveal, and doctor's exit status
 // answers the second question.
-func reportDashboardExposure(cfg *config.Config) {
+func reportDashboardExposure(u *ui.Printer, cfg *config.Config) {
 	switch {
 	case !cfg.EnableDashboard:
-		printNote("Dashboard: disabled (enable_dashboard is false)")
+		u.Note("Dashboard: disabled (enable_dashboard is false)")
 	case cfg.DashboardWithheld():
-		printWarning("Dashboard: NOT served — %s:%d is beyond loopback and no password is set",
+		u.Warning("Dashboard: NOT served — %s:%d is beyond loopback and no password is set",
 			cfg.BindAddress, cfg.DashboardPort)
-		printNote("Fix: guardiand config set-dashboard-password")
-		printNote("The guardian is otherwise unaffected: health, metrics and reveals continue.")
+		u.Note("Fix: guardiand config set-dashboard-password")
+		u.Note("The guardian is otherwise unaffected: health, metrics and reveals continue.")
 	case !cfg.DashboardAuthRequired():
-		printSuccess("Dashboard: served on loopback %s:%d without a credential",
+		u.Success("Dashboard: served on loopback %s:%d without a credential",
 			cfg.BindAddress, cfg.DashboardPort)
 	case cfg.DashboardTLSEnabled():
-		printSuccess("Dashboard: authenticated over TLS on %s:%d (user %q)",
+		u.Success("Dashboard: authenticated over TLS on %s:%d (user %q)",
 			cfg.BindAddress, cfg.DashboardPort, dashboard.Username)
 	default:
-		printSuccess("Dashboard: authenticated on %s:%d (user %q)",
+		u.Success("Dashboard: authenticated on %s:%d (user %q)",
 			cfg.BindAddress, cfg.DashboardPort, dashboard.Username)
-		printNote("Not encrypted: set dashboard_tls_cert_file and dashboard_tls_key_file, or front it with a TLS proxy.")
+		u.Note("Not encrypted: set dashboard_tls_cert_file and dashboard_tls_key_file, or front it with a TLS proxy.")
 	}
 }
 
@@ -174,14 +176,14 @@ func readPasswordFromStdin() (string, error) {
 // promptForDashboardPassword reads the password twice with no echo. The
 // confirmation is the point: a mistyped password that is only discovered later
 // means a dashboard nobody can open.
-func promptForDashboardPassword() (string, error) {
-	printText("Dashboard password: ")
-	first, err := readPasswordInput()
+func promptForDashboardPassword(u *ui.Printer) (string, error) {
+	u.Text("Dashboard password: ")
+	first, err := u.ReadPassword()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to read password")
 	}
-	printText("Confirm password: ")
-	second, err := readPasswordInput()
+	u.Text("Confirm password: ")
+	second, err := u.ReadPassword()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to read password")
 	}

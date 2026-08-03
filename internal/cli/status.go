@@ -3,10 +3,12 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"github.com/timeflareio/guardian/internal/cli/ui"
 	"github.com/timeflareio/guardian/internal/guardian"
 	"go.uber.org/zap"
 )
@@ -51,6 +53,7 @@ and does not require the guardian service to be running.`,
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
+	u := printer(cmd)
 	// Get command flags
 	detailed, _ := cmd.Flags().GetBool("detailed")
 	format, _ := cmd.Flags().GetString("format")
@@ -94,67 +97,67 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// Display status based on format
 	switch format {
 	case "json":
-		return displayStatusJSON(status)
+		return displayStatusJSON(u, status)
 	case "text":
-		return displayStatusText(status)
+		return displayStatusText(u, status)
 	default:
 		return errors.Errorf("unsupported format: %s", format)
 	}
 }
 
-func displayStatusText(status *guardian.Status) error {
-	printHeader("Guardian Status")
-	printSeparator("===============")
-	printEmptyLine()
+func displayStatusText(u *ui.Printer, status *guardian.Status) error {
+	u.Header("Guardian Status")
+	u.Separator("===============")
+	u.EmptyLine()
 
 	// Basic information
-	printf("Guardian ID:      %s\n", status.GuardianID)
-	printf("Guardian Address: %s\n", status.Address)
-	printf("Chain ID:         %s\n", status.ChainID)
-	printf("Registration:     %s\n", formatRegistrationStatus(status.Registered))
+	u.Printf("Guardian ID:      %s\n", status.GuardianID)
+	u.Printf("Guardian Address: %s\n", status.Address)
+	u.Printf("Chain ID:         %s\n", status.ChainID)
+	u.Printf("Registration:     %s\n", formatRegistrationStatus(status.Registered))
 
 	if status.Registered {
 		// Guardian configuration from chain
-		printf("Stake Amount:     %s%s\n", status.StakeAmount, status.StakeDenom)
-		printf("Encryption Key:   %s\n", status.EncryptionPublicKey)
-		printf("Availability:     %s\n", formatAvailabilityRange(status.AvailableFrom, status.AvailableUntil, status.BlockHeight))
-		printf("Accepting Secrets:%s\n", formatAcceptingSecrets(status.AcceptingSecrets))
+		u.Printf("Stake Amount:     %s%s\n", status.StakeAmount, status.StakeDenom)
+		u.Printf("Encryption Key:   %s\n", status.EncryptionPublicKey)
+		u.Printf("Availability:     %s\n", formatAvailabilityRange(status.AvailableFrom, status.AvailableUntil, status.BlockHeight))
+		u.Printf("Accepting Secrets:%s\n", formatAcceptingSecrets(status.AcceptingSecrets))
 	}
 
-	printf("Balance:          %s\n", status.Balance)
+	u.Printf("Balance:          %s\n", status.Balance)
 
 	if status.BlockHeight == -1 {
-		printf("Block Height:     unavailable\n")
+		u.Printf("Block Height:     unavailable\n")
 	} else {
-		printf("Block Height:     %d\n", status.BlockHeight)
+		u.Printf("Block Height:     %d\n", status.BlockHeight)
 	}
 
-	printf("Last Updated:     %s\n", status.LastUpdate.Format(time.RFC3339))
+	u.Printf("Last Updated:     %s\n", status.LastUpdate.Format(time.RFC3339))
 
 	// Activity summary
-	printTextLn("\nActivity Summary")
-	printTextLn("----------------")
-	printf("Active Secrets:   %d\n", status.ActiveSecrets)
+	u.TextLn("\nActivity Summary")
+	u.TextLn("----------------")
+	u.Printf("Active Secrets:   %d\n", status.ActiveSecrets)
 	if status.Registered && status.LockedStake != "" {
-		printf("Locked Bonds:     %s%s\n", status.LockedStake, status.StakeDenom)
+		u.Printf("Locked Bonds:     %s%s\n", status.LockedStake, status.StakeDenom)
 	}
 
 	// Health status
-	printTextLn("\nHealth Status")
-	printTextLn("-------------")
-	printf("Overall Health:   %s\n", formatHealthStatus(status.Healthy))
+	u.TextLn("\nHealth Status")
+	u.TextLn("-------------")
+	u.Printf("Overall Health:   %s\n", formatHealthStatus(status.Healthy))
 
 	return nil
 }
 
-func displayStatusJSON(status *guardian.Status) error {
+func displayStatusJSON(u *ui.Printer, status *guardian.Status) error {
 	// Marshal the status struct to JSON with indentation
 	jsonData, err := json.MarshalIndent(status, "", "  ")
 	if err != nil {
 		return errors.Wrap(err, "failed to marshal status to JSON")
 	}
 
-	printTextLn(string(jsonData))
+	u.TextLn(string(jsonData))
 	return nil
 }
 
@@ -188,7 +191,7 @@ func formatAvailabilityRange(availableFrom, availableUntil, currentBlock int64) 
 		status = "❌ No longer available"
 	}
 
-	return sprintf("%s (blocks %d-%d)", status, availableFrom, availableUntil)
+	return fmt.Sprintf("%s (blocks %d-%d)", status, availableFrom, availableUntil)
 }
 
 func formatAcceptingSecrets(accepting bool) string {

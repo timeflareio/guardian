@@ -12,6 +12,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"github.com/timeflareio/guardian/internal/cli/ui"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -85,6 +86,7 @@ is reachable. Treat the words exactly like the key itself.`,
 }
 
 func runKeyBackup(cmd *cobra.Command, args []string) error {
+	u := printer(cmd)
 	manager, _, err := requireConfig(cmd)
 	if err != nil {
 		return err
@@ -162,10 +164,10 @@ func runKeyBackup(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else {
-		printEmptyLine()
-		printNote("Choose a backup passphrase. It protects the bundle wherever it is stored")
-		printNote("and is independent of the at-rest key passphrase. Store them separately.")
-		passphrase, err = promptNewPassphrase("backup bundle")
+		u.EmptyLine()
+		u.Note("Choose a backup passphrase. It protects the bundle wherever it is stored")
+		u.Note("and is independent of the at-rest key passphrase. Store them separately.")
+		passphrase, err = u.NewPassphrase("backup bundle")
 		if err != nil {
 			return err
 		}
@@ -183,34 +185,34 @@ func runKeyBackup(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(err, "failed to write backup bundle")
 	}
 
-	printEmptyLine()
-	printSeparator("Guardian Backup Created")
-	printEmptyLine()
-	printf(indent1+"📦 Bundle:        %s\n", output)
-	printf(indent1+"🗝️  Key name:      %s\n", effective.KeyName)
-	printf(indent1+"🔑 Public key:    %s\n", derivedHex)
-	printf(indent1+"🗂  Keyring files: %d\n", len(keyringFiles))
+	u.EmptyLine()
+	u.Separator("Guardian Backup Created")
+	u.EmptyLine()
+	u.Printf(ui.Indent1+"📦 Bundle:        %s\n", output)
+	u.Printf(ui.Indent1+"🗝️  Key name:      %s\n", effective.KeyName)
+	u.Printf(ui.Indent1+"🔑 Public key:    %s\n", derivedHex)
+	u.Printf(ui.Indent1+"🗂  Keyring files: %d\n", len(keyringFiles))
 	if len(retiredKeys) > 0 {
-		printf(indent1+"🔁 Retired epoch keys: %d (serving in-flight assignments until settlement)\n", len(retiredKeys))
+		u.Printf(ui.Indent1+"🔁 Retired epoch keys: %d (serving in-flight assignments until settlement)\n", len(retiredKeys))
 	}
-	printEmptyLine()
-	printNote("Storage guidance:")
-	printTextLn(indent1 + "• Copy the bundle OFF this host (the point is surviving disk loss)")
-	printTextLn(indent1 + "• Store the backup passphrase separately from the bundle")
-	printTextLn(indent1 + "• Re-run after every signing-key change; drill 'key restore' before it matters")
-	printEmptyLine()
+	u.EmptyLine()
+	u.Note("Storage guidance:")
+	u.TextLn(ui.Indent1 + "• Copy the bundle OFF this host (the point is surviving disk loss)")
+	u.TextLn(ui.Indent1 + "• Store the backup passphrase separately from the bundle")
+	u.TextLn(ui.Indent1 + "• Re-run after every signing-key change; drill 'key restore' before it matters")
+	u.EmptyLine()
 
 	if showMnemonic {
 		mnemonic, err := custody.KeyToMnemonic(privateKey)
 		if err != nil {
 			return err
 		}
-		printWarning("The 24 words below ARE the share key. Anyone holding them can decrypt")
-		printWarning("every share ever assigned to this guardian. Write them down; never store")
-		printWarning("them digitally in plaintext.")
-		printEmptyLine()
-		printTextLn(indent1 + mnemonic)
-		printEmptyLine()
+		u.Warning("The 24 words below ARE the share key. Anyone holding them can decrypt")
+		u.Warning("every share ever assigned to this guardian. Write them down; never store")
+		u.Warning("them digitally in plaintext.")
+		u.EmptyLine()
+		u.TextLn(ui.Indent1 + mnemonic)
+		u.EmptyLine()
 	}
 
 	return nil
@@ -255,6 +257,7 @@ files from a bundle are restored into the configured keyring directory.`,
 }
 
 func runKeyRestore(cmd *cobra.Command, args []string) error {
+	u := printer(cmd)
 	manager, effective, err := requireConfig(cmd)
 	if err != nil {
 		return errors.Wrap(err, "a configuration is required before restoring")
@@ -273,7 +276,7 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 
 	switch {
 	case fromMnemonic:
-		words := promptForInput("🔤 Enter the 24-word recovery phrase: ")
+		words := u.PromptInput("🔤 Enter the 24-word recovery phrase: ")
 		privateKey, err = custody.KeyFromMnemonic(strings.TrimSpace(words))
 		if err != nil {
 			return err
@@ -290,8 +293,8 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 				return err
 			}
 		} else {
-			printText("🔑 Enter the backup passphrase: ")
-			raw, readErr := readPasswordInput()
+			u.Text("🔑 Enter the backup passphrase: ")
+			raw, readErr := u.ReadPassword()
 			if readErr != nil {
 				return readErr
 			}
@@ -332,9 +335,9 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 				"restored key derives public key %s, but guardian %s is registered with %x — this is NOT the right key for this guardian",
 				derivedHex, guardianAddress, record.EncryptionPublicKey)
 		}
-		printSuccess("Chain verification passed: restored key matches the registered guardian record")
+		u.Success("Chain verification passed: restored key matches the registered guardian record")
 	} else {
-		printWarning("Skipping chain verification (--offline) — 'guardiand start' will still enforce it")
+		u.Warning("Skipping chain verification (--offline) — 'guardiand start' will still enforce it")
 	}
 
 	// Write the share key, encrypted at rest.
@@ -350,10 +353,10 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else {
-		printEmptyLine()
-		printNote("No at-rest passphrase file found. Choose one; it is stored in a 0600 file")
-		printNote("beside the key so the daemon can decrypt unattended.")
-		atRestPassphrase, err = promptNewPassphrase("share-encryption private key")
+		u.EmptyLine()
+		u.Note("No at-rest passphrase file found. Choose one; it is stored in a 0600 file")
+		u.Note("beside the key so the daemon can decrypt unattended.")
+		atRestPassphrase, err = u.NewPassphrase("share-encryption private key")
 		if err != nil {
 			return err
 		}
@@ -375,7 +378,7 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 		if err := custody.RestoreRetiredKeys(keyPath, bundle.RetiredKeys, atRestPassphrase); err != nil {
 			return err
 		}
-		printSuccess("Restored %d retired epoch key(s) beside the current key", len(bundle.RetiredKeys))
+		u.Success("Restored %d retired epoch key(s) beside the current key", len(bundle.RetiredKeys))
 	}
 
 	// Restore keyring files and identity fields from the bundle.
@@ -384,7 +387,7 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 			if err := custody.RestoreKeyringFiles(effective.KeyringDir, bundle.KeyringFiles, force); err != nil {
 				return err
 			}
-			printSuccess("Restored %d keyring file(s) into %s", len(bundle.KeyringFiles), effective.KeyringDir)
+			u.Success("Restored %d keyring file(s) into %s", len(bundle.KeyringFiles), effective.KeyringDir)
 		}
 		if bundle.KeyName != "" {
 			if err := manager.SetWithoutValidation("key_name", bundle.KeyName); err != nil {
@@ -400,7 +403,7 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 			if configBytes, err := os.ReadFile(manager.GetConfigPath()); err == nil {
 				sum := sha256.Sum256(configBytes)
 				if hex.EncodeToString(sum[:]) != bundle.ConfigFingerprint {
-					printNote("Config fingerprint differs from backup time — review 'guardiand config list' for drift")
+					u.Note("Config fingerprint differs from backup time — review 'guardiand config list' for drift")
 				}
 			}
 		}
@@ -413,19 +416,19 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(err, "failed to save config")
 	}
 
-	printEmptyLine()
-	printSeparator("Guardian Keys Restored")
-	printEmptyLine()
-	printf(indent1+"🔒 Private key: %s (encrypted at rest)\n", keyPath)
-	printf(indent1+"🔑 Public key:  %s\n", derivedHex)
-	printEmptyLine()
-	printNote("Next steps:")
-	printText(indent1 + "• ")
-	printCommand("guardiand config doctor")
-	printTextLn(" — confirm keys and configuration load")
-	printText(indent1 + "• ")
-	printCommand("guardiand start")
-	printTextLn(" — the startup self-check re-verifies the key against the chain\n")
+	u.EmptyLine()
+	u.Separator("Guardian Keys Restored")
+	u.EmptyLine()
+	u.Printf(ui.Indent1+"🔒 Private key: %s (encrypted at rest)\n", keyPath)
+	u.Printf(ui.Indent1+"🔑 Public key:  %s\n", derivedHex)
+	u.EmptyLine()
+	u.Note("Next steps:")
+	u.Text(ui.Indent1 + "• ")
+	u.Command("guardiand config doctor")
+	u.TextLn(" — confirm keys and configuration load")
+	u.Text(ui.Indent1 + "• ")
+	u.Command("guardiand start")
+	u.TextLn(" — the startup self-check re-verifies the key against the chain\n")
 
 	return nil
 }

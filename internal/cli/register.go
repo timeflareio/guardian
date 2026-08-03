@@ -7,6 +7,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	secretstypes "github.com/timeflareio/chain/x/secrets/types"
+	"github.com/timeflareio/guardian/internal/cli/ui"
 	"github.com/timeflareio/guardian/internal/config"
 	"github.com/timeflareio/guardian/internal/guardian"
 )
@@ -61,6 +62,7 @@ Note: Uses encryption public key from configuration file.`,
 }
 
 func runRegister(cmd *cobra.Command, args []string) error {
+	u := printer(cmd)
 	_, cfg, err := requireConfig(cmd)
 	if err != nil {
 		return err
@@ -100,20 +102,20 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	// Pre-flight: the key must exist in the keyring (in-process check)
 	guardianAddress, err := getGuardianAddress(cfg)
 	if err != nil {
-		printEmptyLine()
-		printError("Guardian key not accessible: %v", err)
-		printText(indent1 + "Create it with: ")
-		printCommand("guardiand wallet create\n")
-		printText(indent1 + "Or restore it with: ")
-		printCommand("guardiand wallet import-from-mnemonic\n")
-		printEmptyLine()
+		u.EmptyLine()
+		u.Error("Guardian key not accessible: %v", err)
+		u.Text(ui.Indent1 + "Create it with: ")
+		u.Command("guardiand wallet create\n")
+		u.Text(ui.Indent1 + "Or restore it with: ")
+		u.Command("guardiand wallet import-from-mnemonic\n")
+		u.EmptyLine()
 		return errors.New("guardian key not found")
 	}
 
 	// Show the registration and either execute or bail
-	if !autoAccept && !showRegistrationAndConfirm(cfg, guardianAddress, stakeAmount, availableFrom, availableUntil, acceptingSecrets) {
-		printNote("Registration cancelled.")
-		printEmptyLine()
+	if !autoAccept && !showRegistrationAndConfirm(u, cfg, guardianAddress, stakeAmount, availableFrom, availableUntil, acceptingSecrets) {
+		u.Note("Registration cancelled.")
+		u.EmptyLine()
 		return nil
 	}
 
@@ -137,100 +139,100 @@ func runRegister(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(err, "registration failed")
 	}
 
-	showRegistrationSuccess(cfg, availableFrom, availableUntil, acceptingSecrets)
+	showRegistrationSuccess(u, cfg, availableFrom, availableUntil, acceptingSecrets)
 	return nil
 }
 
 // showRegistrationAndConfirm displays the registration parameters and asks
 // for confirmation before the transaction is signed and broadcast.
-func showRegistrationAndConfirm(cfg *config.Config, guardianAddress, stakeAmount string, availableFrom, availableUntil int64, acceptingSecrets bool) bool {
+func showRegistrationAndConfirm(u *ui.Printer, cfg *config.Config, guardianAddress, stakeAmount string, availableFrom, availableUntil int64, acceptingSecrets bool) bool {
 	blockSeconds := cfg.BlockTime.Seconds()
 
-	printEmptyLine()
-	printSeparator("🚀 Guardian Registration Preview")
-	printEmptyLine()
+	u.EmptyLine()
+	u.Separator("🚀 Guardian Registration Preview")
+	u.EmptyLine()
 
-	printHeader("📋 Registration Details:")
-	printEmptyLine()
+	u.Header("📋 Registration Details:")
+	u.EmptyLine()
 
-	printText(indent1 + "• Guardian Key:        ")
-	printValue("%s\n", cfg.KeyName)
+	u.Text(ui.Indent1 + "• Guardian Key:        ")
+	u.Value("%s\n", cfg.KeyName)
 
-	printText(indent1 + "• Guardian Address:    ")
-	printValue("%s\n", guardianAddress)
+	u.Text(ui.Indent1 + "• Guardian Address:    ")
+	u.Value("%s\n", guardianAddress)
 
-	printText(indent1 + "• Float Deposit:       ")
-	printValue("%s\n", stakeAmount)
+	u.Text(ui.Indent1 + "• Float Deposit:       ")
+	u.Value("%s\n", stakeAmount)
 
-	printText(indent1 + "• Available From:      ")
+	u.Text(ui.Indent1 + "• Available From:      ")
 	if availableFrom > 0 {
-		printValue("Current block + %d\n", availableFrom)
+		u.Value("Current block + %d\n", availableFrom)
 	} else {
-		printValue("Current block + 1\n")
+		u.Value("Current block + 1\n")
 	}
 
-	printText(indent1 + "• Available Until:     ")
-	printValue("Current block + %d\n", availableUntil)
+	u.Text(ui.Indent1 + "• Available Until:     ")
+	u.Value("Current block + %d\n", availableUntil)
 
-	printText(indent1 + "• Duration:            ")
-	printValue("~%d blocks (~%.1f hours)\n", availableUntil-availableFrom, float64(availableUntil-availableFrom)*blockSeconds/3600.0)
+	u.Text(ui.Indent1 + "• Duration:            ")
+	u.Value("~%d blocks (~%.1f hours)\n", availableUntil-availableFrom, float64(availableUntil-availableFrom)*blockSeconds/3600.0)
 
-	printText(indent1 + "• Accepting Secrets:   ")
+	u.Text(ui.Indent1 + "• Accepting Secrets:   ")
 	if acceptingSecrets {
-		printValue("Yes (accepting new assignments)\n")
+		u.Value("Yes (accepting new assignments)\n")
 	} else {
-		printNote("No (not accepting new assignments)\n")
+		u.Note("No (not accepting new assignments)\n")
 	}
 
-	printEmptyLine()
-	printHeader("⚠️  This will:")
-	printTextLn(indent1 + "• Sign MsgGuardianRegister with your keyring key and broadcast it")
-	printTextLn(indent1 + "• Burn the 1,000 VEIL entry fee and deposit the specified float from your account")
-	printTextLn(indent1 + "• Make your guardian available for the specified duration")
-	printTextLn(indent1 + "• You must run 'guardiand start' to begin actively handling assignments")
-	printEmptyLine()
+	u.EmptyLine()
+	u.Header("⚠️  This will:")
+	u.TextLn(ui.Indent1 + "• Sign MsgGuardianRegister with your keyring key and broadcast it")
+	u.TextLn(ui.Indent1 + "• Burn the 1,000 VEIL entry fee and deposit the specified float from your account")
+	u.TextLn(ui.Indent1 + "• Make your guardian available for the specified duration")
+	u.TextLn(ui.Indent1 + "• You must run 'guardiand start' to begin actively handling assignments")
+	u.EmptyLine()
 
-	return promptForConfirmation("Execute this registration?")
+	return u.Confirm("Execute this registration?")
 }
 
 // showRegistrationSuccess displays success message and next steps
-func showRegistrationSuccess(cfg *config.Config, availableFrom, availableUntil int64, acceptingSecrets bool) {
+func showRegistrationSuccess(u *ui.Printer, cfg *config.Config, availableFrom, availableUntil int64, acceptingSecrets bool) {
 	headerColor := color.New(color.FgGreen, color.Bold)
 	sectionColor := color.New(color.FgYellow, color.Bold)
 	commandColor := color.New(color.FgGreen, color.Bold)
 	valueColor := color.New(color.FgCyan)
 	blockSeconds := cfg.BlockTime.Seconds()
 
-	printEmptyLine()
+	u.EmptyLine()
 	headerColor.Println("✅ Guardian Registration Successful!")
 	headerColor.Println("═══════════════════════════════════")
-	printEmptyLine()
+	u.EmptyLine()
 
 	sectionColor.Println("📅 Availability Window:")
-	printEmptyLine()
-	printText("   • Status:     ")
+	u.EmptyLine()
+	u.Text("   • Status:     ")
 	valueColor.Println("Registered and ready for assignments")
-	printText("   • Duration:   ")
+	u.Text("   • Duration:   ")
 	valueColor.Printf("%d blocks (~%.1f hours)\n", availableUntil-availableFrom, float64(availableUntil-availableFrom)*blockSeconds/3600.0)
-	printEmptyLine()
+	u.EmptyLine()
 
 	sectionColor.Println("🚀 Next Steps:")
-	printEmptyLine()
-	printTextLn("   Start your guardian service to begin accepting secret assignments:")
-	printText("   ")
+	u.EmptyLine()
+	u.TextLn("   Start your guardian service to begin accepting secret assignments:")
+	u.Text("   ")
 	commandColor.Println("guardiand start")
-	printEmptyLine()
+	u.EmptyLine()
 
 	sectionColor.Println("⚠️  Important Reminders:")
-	printEmptyLine()
+	u.EmptyLine()
 	if acceptingSecrets {
-		printTextLn("   • Your guardian is ELIGIBLE to receive new secret assignments")
-		printTextLn("   • Run 'guardiand start' to begin actively handling assignments")
-		printTextLn("   • Missing reveals while assigned will result in slashing penalties")
+		u.TextLn("   • Your guardian is ELIGIBLE to receive new secret assignments")
+		u.TextLn("   • Run 'guardiand start' to begin actively handling assignments")
+		u.TextLn("   • Missing reveals while assigned will result in slashing penalties")
 	} else {
-		printTextLn("   • Your guardian is NOT eligible to receive new secret assignments")
-		printTextLn("   • To become eligible, run 'guardiand update --accepting-secrets=true'")
+		u.TextLn("   • Your guardian is NOT eligible to receive new secret assignments")
+		u.TextLn("   • To become eligible, run 'guardiand update --accepting-secrets=true'")
 	}
-	printf("   • Monitor your guardian's health at http://localhost:%d/health\n", cfg.HealthPort)
-	printEmptyLine()
+	u.Printf("   • Monitor your guardian's health at http://localhost:%d/health\n", cfg.HealthPort)
+	u.EmptyLine()
 }

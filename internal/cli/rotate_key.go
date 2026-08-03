@@ -12,6 +12,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"github.com/timeflareio/guardian/internal/cli/ui"
 
 	crypto "github.com/timeflareio/crypto/go"
 	"github.com/timeflareio/guardian/internal/chain"
@@ -64,6 +65,7 @@ the new epoch and reloads, but a restart makes the cutover immediate).`,
 }
 
 func runRotateKey(cmd *cobra.Command, args []string) error {
+	u := printer(cmd)
 	manager, _, err := requireConfig(cmd)
 	if err != nil {
 		return err
@@ -108,13 +110,13 @@ func runRotateKey(cmd *cobra.Command, args []string) error {
 	defer custody.Zero(newPair.PrivateKey[:])
 	newPubHex := hex.EncodeToString(newPair.PublicKey[:])
 
-	printEmptyLine()
-	printSeparator("Guardian Key Rotation")
-	printEmptyLine()
-	printf(indent1+"👮 Guardian:       %s\n", effective.GuardianAddress)
-	printf(indent1+"🔑 Current epoch:  %d (%x)\n", currentEpoch, currentDerived[:])
-	printf(indent1+"🆕 Next epoch:     %d (%s)\n", currentEpoch+1, newPubHex)
-	printEmptyLine()
+	u.EmptyLine()
+	u.Separator("Guardian Key Rotation")
+	u.EmptyLine()
+	u.Printf(ui.Indent1+"👮 Guardian:       %s\n", effective.GuardianAddress)
+	u.Printf(ui.Indent1+"🔑 Current epoch:  %d (%x)\n", currentEpoch, currentDerived[:])
+	u.Printf(ui.Indent1+"🆕 Next epoch:     %d (%s)\n", currentEpoch+1, newPubHex)
+	u.EmptyLine()
 
 	// 3. Backup ceremony — the WHOLE keyring (new key + current, which is
 	// about to retire, + already-retired epochs) travels in one bundle,
@@ -157,9 +159,9 @@ func runRotateKey(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else {
-		printNote("Backup ceremony: choose a backup passphrase for the rotation bundle.")
-		printNote("It carries the NEW key and every old epoch — store it off this host.")
-		backupPassphrase, err = promptNewPassphrase("rotation backup bundle")
+		u.Note("Backup ceremony: choose a backup passphrase for the rotation bundle.")
+		u.Note("It carries the NEW key and every old epoch — store it off this host.")
+		backupPassphrase, err = u.NewPassphrase("rotation backup bundle")
 		if err != nil {
 			return err
 		}
@@ -174,12 +176,12 @@ func runRotateKey(cmd *cobra.Command, args []string) error {
 	if err := os.WriteFile(backupOutput, blob, 0600); err != nil {
 		return errors.Wrap(err, "failed to write the rotation backup bundle")
 	}
-	printSuccess("Backup ceremony complete: %s (copy it OFF this host before continuing)", backupOutput)
-	printEmptyLine()
+	u.Success("Backup ceremony complete: %s (copy it OFF this host before continuing)", backupOutput)
+	u.EmptyLine()
 
 	// 4. Confirm and submit.
-	if !assumeYes && !promptForConfirmation("Submit the rotation transaction now?") {
-		printNote("Rotation aborted — nothing was submitted; the backup bundle can be deleted.")
+	if !assumeYes && !u.Confirm("Submit the rotation transaction now?") {
+		u.Note("Rotation aborted — nothing was submitted; the backup bundle can be deleted.")
 		return nil
 	}
 
@@ -223,7 +225,7 @@ func runRotateKey(cmd *cobra.Command, args []string) error {
 	// The broadcast returns at CheckTx (SYNC); the message can still fail in
 	// DeliverTx (interval not met, insufficient fee funds). NEVER cut the
 	// local key files over until the on-chain record has actually advanced.
-	printNote("Broadcast %s — waiting for on-chain confirmation…", txHash)
+	u.Note("Broadcast %s — waiting for on-chain confirmation…", txHash)
 	confirmed := false
 	for deadline := time.Now().Add(90 * time.Second); time.Now().Before(deadline); {
 		pollCtx, pollCancel := context.WithTimeout(context.Background(), effective.RequestTimeout)
@@ -261,7 +263,7 @@ func runRotateKey(cmd *cobra.Command, args []string) error {
 	// directory, which is a different place.
 	publicKeyPath := filepath.Join(filepath.Dir(effective.EncryptionPrivateKeyPath), config.DefaultPublicKeyFileName)
 	if err := os.WriteFile(publicKeyPath, []byte(newPubHex), 0644); err != nil { //nolint:gosec // public key
-		printWarning("Failed to refresh %s: %v", publicKeyPath, err)
+		u.Warning("Failed to refresh %s: %v", publicKeyPath, err)
 	}
 	if err := manager.SetWithoutValidation("encryption_public_key", newPubHex); err != nil {
 		return err
@@ -270,20 +272,20 @@ func runRotateKey(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(err, "failed to save config")
 	}
 
-	printEmptyLine()
-	printSeparator("Key Rotated")
-	printEmptyLine()
-	printf(indent1+"🧾 Transaction:   %s\n", txHash)
-	printf(indent1+"🆕 New epoch:     %d — in force for selections from the NEXT block\n", currentEpoch+1)
-	printf(indent1+"🔑 New key:       %s\n", newPubHex)
-	printf(indent1+"🔁 Retired epoch: %d kept at %s\n", currentEpoch, retiredPath)
-	printEmptyLine()
-	printNote("Next steps:")
-	printTextLn(indent1 + "• Restart the daemon if it is running (it also self-detects the new epoch)")
-	printTextLn(indent1 + "• Keep the retired key until its LAST in-flight assignment settles — deleting")
-	printTextLn(indent1 + "  it earlier means a no-reveal slash on every assignment encrypted to it")
-	printTextLn(indent1 + "• Store the rotation bundle and its passphrase separately, off this host")
-	printEmptyLine()
+	u.EmptyLine()
+	u.Separator("Key Rotated")
+	u.EmptyLine()
+	u.Printf(ui.Indent1+"🧾 Transaction:   %s\n", txHash)
+	u.Printf(ui.Indent1+"🆕 New epoch:     %d — in force for selections from the NEXT block\n", currentEpoch+1)
+	u.Printf(ui.Indent1+"🔑 New key:       %s\n", newPubHex)
+	u.Printf(ui.Indent1+"🔁 Retired epoch: %d kept at %s\n", currentEpoch, retiredPath)
+	u.EmptyLine()
+	u.Note("Next steps:")
+	u.TextLn(ui.Indent1 + "• Restart the daemon if it is running (it also self-detects the new epoch)")
+	u.TextLn(ui.Indent1 + "• Keep the retired key until its LAST in-flight assignment settles — deleting")
+	u.TextLn(ui.Indent1 + "  it earlier means a no-reveal slash on every assignment encrypted to it")
+	u.TextLn(ui.Indent1 + "• Store the rotation bundle and its passphrase separately, off this host")
+	u.EmptyLine()
 
 	return nil
 }

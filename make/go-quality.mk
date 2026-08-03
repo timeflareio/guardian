@@ -106,10 +106,31 @@ verify-boundaries:
 		echo "$$bad"; exit 1; \
 	fi
 	@echo "✅ Module boundary respected"
+	@$(MAKE) --no-print-directory verify-output-boundary
+
+# internal/cli/ui is the only package that may write to the process's output.
+# Everything else returns a value or an error and lets a caller decide how to
+# say it — which is what makes a command's output assertable in a test, and what
+# stops the daemon's packages printing into a container log by accident.
+#
+# The check is on fmt.Print* rather than on os.Stdout, because that is the form
+# the leak actually takes: a helper that "just prints something" reaches for
+# fmt.Println, not for the file handle. Logging goes through zap, which writes to
+# its own configured sink and is not what this bounds.
+verify-output-boundary:
+	@echo "--> Checking the output boundary..."
+	@bad=$$(grep -rn 'fmt\.Print' --include='*.go' . \
+		| grep -v '^\./internal/cli/ui/' \
+		| grep -v '_test\.go:' || true); \
+	if [ -n "$$bad" ]; then \
+		echo "❌ output written outside internal/cli/ui — route it through a ui.Printer:"; \
+		echo "$$bad"; exit 1; \
+	fi
+	@echo "✅ Output boundary respected"
 
 # Combined quality checks (read-only mode)
 # go-govulncheck runs separately (advisory) — see the verify target note.
 go-quality-check: go-format-check go-lint-check go-vet
 	@echo "🎉 All code quality checks passed!"
 
-.PHONY: go-format go-lint go-imports go-imports-check go-vet go-govulncheck go-format-check go-lint-check go-quality-check verify-boundaries
+.PHONY: go-format go-lint go-imports go-imports-check go-vet go-govulncheck go-format-check go-lint-check go-quality-check verify-boundaries verify-output-boundary

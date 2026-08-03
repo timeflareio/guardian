@@ -3,6 +3,7 @@ package cli
 import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"github.com/timeflareio/guardian/internal/cli/ui"
 	"github.com/timeflareio/guardian/internal/config"
 )
 
@@ -19,6 +20,13 @@ import (
 // on the root command, so cmd.Flags() resolves it on any subcommand.
 const configFlagName = "config-path"
 
+// printer builds this command's output layer over the writers cobra resolved,
+// rather than over os.Stdout directly. Taking the writers from the command is
+// what lets a test drive a command over a buffer and assert on what it said.
+func printer(cmd *cobra.Command) *ui.Printer {
+	return ui.New(cmd.OutOrStdout(), cmd.InOrStdin())
+}
+
 // newManager builds a manager for the path this invocation asked for.
 func newManager(cmd *cobra.Command) *config.Manager {
 	path, _ := cmd.Flags().GetString(configFlagName)
@@ -34,7 +42,7 @@ func newManager(cmd *cobra.Command) *config.Manager {
 func requireConfig(cmd *cobra.Command) (*config.Manager, *config.Config, error) {
 	manager := newManager(cmd)
 	if !manager.Exists() {
-		showNoConfigMessage(manager.GetConfigPath())
+		showNoConfigMessage(printer(cmd), manager.GetConfigPath())
 		return nil, nil, errors.Errorf("no configuration at %s", manager.GetConfigPath())
 	}
 	if err := manager.Load(); err != nil {

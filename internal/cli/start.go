@@ -6,8 +6,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"fmt"
+
 	"github.com/pkg/errors"
+
 	"github.com/spf13/cobra"
+	"github.com/timeflareio/guardian/internal/cli/ui"
 	"github.com/timeflareio/guardian/internal/config"
 	"github.com/timeflareio/guardian/internal/guardian"
 	"github.com/timeflareio/guardian/internal/monitoring"
@@ -72,6 +76,7 @@ flags below, in that order of increasing precedence.`,
 }
 
 func runStart(cmd *cobra.Command, args []string) error {
+	u := printer(cmd)
 	manager, cfg, err := requireConfig(cmd)
 	if err != nil {
 		return err
@@ -82,7 +87,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// to answer one at, so the prompt was not a safety feature but a startup
 	// failure waiting for a host without a TTY — and because a declined prompt
 	// returned nil, the failure exited zero.
-	showStartConfig(cfg, manager.GetConfigPath())
+	showStartConfig(u, cfg, manager.GetConfigPath())
 
 	// Initialize logger
 	logger, err := initLogger(cfg.LogLevel, cfg.LogFormat)
@@ -91,8 +96,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = logger.Sync() }() // Error ignored on defer
 
-	printSuccess("🎯 Starting Timeflare Guardian Service %s...", buildVersion())
-	printEmptyLine()
+	u.Success("🎯 Starting Timeflare Guardian Service %s...", buildVersion())
+	u.EmptyLine()
 
 	logger.Info("Starting Timeflare Guardian Service",
 		zap.String("version", buildVersion()),
@@ -129,12 +134,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if err := guardianService.VerifyRegistration(ctx); err != nil {
 		logger.Error("Guardian pre-flight check failed",
 			zap.Error(err),
-			zap.String("error_detail", sprintf("%+v", err)))
-		printEmptyLine()
-		printError("Guardian Pre-flight Check Failed: %v", err)
-		printText(indent1 + "If the guardian is not yet registered, run: ")
-		printCommand("guardiand register")
-		printEmptyLine()
+			zap.String("error_detail", fmt.Sprintf("%+v", err)))
+		u.EmptyLine()
+		u.Error("Guardian Pre-flight Check Failed: %v", err)
+		u.Text(ui.Indent1 + "If the guardian is not yet registered, run: ")
+		u.Command("guardiand register")
+		u.EmptyLine()
 		return errors.Wrap(err, "guardian pre-flight check failed")
 	}
 
@@ -155,14 +160,14 @@ func runStart(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	printSuccess("Guardian service started successfully!")
-	printf(indent1+"📊 Health endpoint:  http://localhost:%d/health\n", cfg.HealthPort)
-	printf(indent1+"📈 Metrics endpoint: http://localhost:%d/metrics\n", cfg.MetricsPort)
-	printEmptyLine()
+	u.Success("Guardian service started successfully!")
+	u.Printf(ui.Indent1+"📊 Health endpoint:  http://localhost:%d/health\n", cfg.HealthPort)
+	u.Printf(ui.Indent1+"📈 Metrics endpoint: http://localhost:%d/metrics\n", cfg.MetricsPort)
+	u.EmptyLine()
 
-	printNote("Monitoring for secret assignments...")
-	printNote(indent1 + "Press Ctrl+C to shutdown gracefully")
-	printEmptyLine()
+	u.Note("Monitoring for secret assignments...")
+	u.Note(ui.Indent1 + "Press Ctrl+C to shutdown gracefully")
+	u.EmptyLine()
 
 	logger.Info("Guardian service started successfully",
 		zap.Int("health_port", cfg.HealthPort),
@@ -172,15 +177,15 @@ func runStart(cmd *cobra.Command, args []string) error {
 	select {
 	case sig := <-sigChan:
 		logger.Info("Received shutdown signal", zap.String("signal", sig.String()))
-		printWarning("📡 Received shutdown signal: %s", sig.String())
+		u.Warning("📡 Received shutdown signal: %s", sig.String())
 	case err := <-errChan:
 		logger.Error("Service error", zap.Error(err))
-		printError("Service error: %v", err)
+		u.Error("Service error: %v", err)
 		return err
 	}
 
 	// Graceful shutdown
-	printStep("🔄 Shutting down guardian service...")
+	u.Step("🔄 Shutting down guardian service...")
 	logger.Info("Shutting down guardian service...")
 	cancel()
 
@@ -190,9 +195,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	if err := guardian.GracefulShutdown(shutdownCtx, guardianService, monitoringService); err != nil {
 		logger.Warn("Graceful shutdown failed", zap.Error(err))
-		printWarning("Graceful shutdown incomplete: %v", err)
+		u.Warning("Graceful shutdown incomplete: %v", err)
 	} else {
-		printSuccess("Guardian service stopped cleanly")
+		u.Success("Guardian service stopped cleanly")
 	}
 
 	// In-memory hygiene: zero the cached share-decryption key on the way out
@@ -232,62 +237,62 @@ func initLogger(level, format string) (*zap.Logger, error) {
 // showStartConfig reports the configuration this run resolved to — file plus
 // environment plus flags — so a container log records what the service actually
 // started with rather than what its file says.
-func showStartConfig(config *config.Config, configPath string) {
-	printEmptyLine()
-	printSeparator("🚀 Guardian Service Configuration")
-	printEmptyLine()
+func showStartConfig(u *ui.Printer, config *config.Config, configPath string) {
+	u.EmptyLine()
+	u.Separator("🚀 Guardian Service Configuration")
+	u.EmptyLine()
 
 	// Network configuration
-	printText(indent1)
-	printKey("%-18s", "Chain ID:")
-	printValue("%s\n", config.ChainID)
+	u.Text(ui.Indent1)
+	u.Key("%-18s", "Chain ID:")
+	u.Value("%s\n", config.ChainID)
 
-	printText(indent1)
-	printKey("%-18s", "RPC Endpoint:")
-	printValue("%s\n", config.RPCEndpoint)
+	u.Text(ui.Indent1)
+	u.Key("%-18s", "RPC Endpoint:")
+	u.Value("%s\n", config.RPCEndpoint)
 
-	printText(indent1)
-	printKey("%-18s", "gRPC Endpoint:")
-	printValue("%s\n", config.GRPCEndpoint)
+	u.Text(ui.Indent1)
+	u.Key("%-18s", "gRPC Endpoint:")
+	u.Value("%s\n", config.GRPCEndpoint)
 
-	printEmptyLine()
+	u.EmptyLine()
 
 	// Guardian identity
-	printText(indent1)
-	printKey("%-18s", "Guardian Key:")
-	printValue("%s\n", config.KeyName)
+	u.Text(ui.Indent1)
+	u.Key("%-18s", "Guardian Key:")
+	u.Value("%s\n", config.KeyName)
 
-	printText(indent1)
-	printKey("%-18s", "Keyring Backend:")
-	printValue("%s\n", config.KeyringBackend)
+	u.Text(ui.Indent1)
+	u.Key("%-18s", "Keyring Backend:")
+	u.Value("%s\n", config.KeyringBackend)
 
-	printEmptyLine()
+	u.EmptyLine()
 
 	// Service configuration
-	printText(indent1)
-	printKey("%-18s", "Log Level:")
-	printValue("%s\n", config.LogLevel)
+	u.Text(ui.Indent1)
+	u.Key("%-18s", "Log Level:")
+	u.Value("%s\n", config.LogLevel)
 
-	printText(indent1)
-	printKey("%-18s", "Log Format:")
-	printValue("%s\n", config.LogFormat)
+	u.Text(ui.Indent1)
+	u.Key("%-18s", "Log Format:")
+	u.Value("%s\n", config.LogFormat)
 
-	printText(indent1)
-	printKey("%-18s", "Health Port:")
-	printValue("%d\n", config.HealthPort)
+	u.Text(ui.Indent1)
+	u.Key("%-18s", "Health Port:")
+	u.Value("%d\n", config.HealthPort)
 
-	printText(indent1)
-	printKey("%-18s", "Metrics Port:")
-	printValue("%d\n", config.MetricsPort)
+	u.Text(ui.Indent1)
+	u.Key("%-18s", "Metrics Port:")
+	u.Value("%d\n", config.MetricsPort)
 
-	printEmptyLine()
+	u.EmptyLine()
 
 	// Config file path
-	printText(indent1)
-	printKey("%-18s", "Config File:")
-	printPath("%s\n", configPath)
+	u.Text(ui.Indent1)
+	u.Key("%-18s", "Config File:")
+	u.Path("%s\n", configPath)
 
-	printEmptyLine()
-	printNote("Starting guardian service with the above configuration.")
-	printEmptyLine()
+	u.EmptyLine()
+	u.Note("Starting guardian service with the above configuration.")
+	u.EmptyLine()
 }
