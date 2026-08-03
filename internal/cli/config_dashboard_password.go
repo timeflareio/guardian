@@ -42,13 +42,13 @@ loopback the dashboard is not served at all until this is set.
 Prompts twice with no echo by default. The password is never accepted as a
 command-line argument, because arguments land in shell history and in ps.`,
 		Example: `  # Prompt for a password (twice, no echo)
-  guardiand config set-dashboard-password
+  guardianctl config set-dashboard-password
 
   # Generate a strong one and print it once
-  guardiand config set-dashboard-password --generate
+  guardianctl config set-dashboard-password --generate
 
   # Provision a chosen password from a script or an image build
-  printf '%s' "$DASHBOARD_PASSWORD" | guardiand config set-dashboard-password --stdin`,
+  printf '%s' "$DASHBOARD_PASSWORD" | guardianctl config set-dashboard-password --stdin`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runConfigSetDashboardPassword(cmd, generate, fromStdin)
@@ -131,7 +131,7 @@ func reportDashboardExposure(u *ui.Printer, cfg *config.Config) {
 	case cfg.DashboardWithheld():
 		u.Warning("Dashboard: NOT served — %s:%d is beyond loopback and no password is set",
 			cfg.BindAddress, cfg.DashboardPort)
-		u.Note("Fix: guardiand config set-dashboard-password")
+		u.Note("Fix: guardianctl config set-dashboard-password")
 		u.Note("The guardian is otherwise unaffected: health, metrics and reveals continue.")
 	case !cfg.DashboardAuthRequired():
 		u.Success("Dashboard: served on loopback %s:%d without a credential",

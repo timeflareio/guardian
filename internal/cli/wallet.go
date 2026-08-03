@@ -11,10 +11,10 @@ import (
 
 // NewWalletCmd creates the wallet command group — lifecycle for the
 // guardian's SIGNING key (secp256k1, signs registrations, confirmations and
-// reveals). A separate group from 'guardiand key', which is the share-key
+// reveals). A separate group from 'guardianctl key', which is the share-key
 // (X25519) domain: one verb per key domain, so 'wallet create' can never be
 // mistaken for creating a share key. Before this group existed the
-// distroless guardian image pointed operators at 'timeflared keys add' — a
+// distroless guardian image once pointed operators at 'timeflared keys add' — a
 // binary the image does not ship.
 func NewWalletCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -105,7 +105,7 @@ func runWalletCreate(cmd *cobra.Command, args []string) error {
 	u.Note("Write the 24 words down and store them securely. Anyone holding")
 	u.Note("them controls this key's balance; without them a lost keyring is")
 	u.Note("unrecoverable. The same words restore the same account in any")
-	u.Note("Timeflare wallet ('guardiand wallet import-from-mnemonic',")
+	u.Note("Timeflare wallet ('guardianctl wallet import-from-mnemonic',")
 	u.Note("'timeflared keys add --recover', or the mobile app).")
 	u.EmptyLine()
 	return nil

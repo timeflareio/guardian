@@ -7,6 +7,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	secretstypes "github.com/timeflareio/chain/x/secrets/types"
+	"github.com/timeflareio/guardian/internal/chain"
 	"github.com/timeflareio/guardian/internal/cli/ui"
 	"github.com/timeflareio/guardian/internal/config"
 	"github.com/timeflareio/guardian/internal/guardian"
@@ -23,7 +24,7 @@ The registration transaction is built, signed with your keyring key, and
 broadcast in-process — the exact parameters are shown and confirmed before
 anything is sent.
 
-IMPORTANT: This command only handles NEW registrations. Use 'guardiand update'
+IMPORTANT: This command only handles NEW registrations. Use 'guardianctl update'
 for changes to an existing registration.
 
 Registration charges the protocol entry fee (1,000 VEIL, routed to validators) in
@@ -40,13 +41,13 @@ Parameters (config-default + flag-override):
 
 Note: Uses encryption public key from configuration file.`,
 		Example: `  # Registration with config defaults
-  guardiand register
+  guardianctl register
 
   # Explicit deposit and availability window
-  guardiand register --stake-amount 10000000000uveil --available-until 14400
+  guardianctl register --stake-amount 10000000000uveil --available-until 14400
 
   # Registration NOT accepting secrets initially
-  guardiand register --stake-amount 15000000000uveil --available-until 28800 --accepting-secrets=false`,
+  guardianctl register --stake-amount 15000000000uveil --available-until 28800 --accepting-secrets=false`,
 		RunE:         runRegister,
 		SilenceUsage: true, // Don't show usage on errors
 	}
@@ -90,7 +91,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	// Validate parameters
 	encryptionKeyHex := cfg.EncryptionPublicKey
 	if encryptionKeyHex == "" {
-		return errors.New("encryption public key is required. Set it in config with 'guardiand config set encryption-public-key <key>'")
+		return errors.New("encryption public key is required. Set it in config with 'guardianctl config set encryption-public-key <key>'")
 	}
 	if len(encryptionKeyHex) != 64 {
 		return errors.Errorf("encryption public key must be exactly 64 hex characters (32 bytes), got %d characters", len(encryptionKeyHex))
@@ -105,9 +106,9 @@ func runRegister(cmd *cobra.Command, args []string) error {
 		u.EmptyLine()
 		u.Error("Guardian key not accessible: %v", err)
 		u.Text(ui.Indent1 + "Create it with: ")
-		u.Command("guardiand wallet create\n")
+		u.Command("guardianctl wallet create\n")
 		u.Text(ui.Indent1 + "Or restore it with: ")
-		u.Command("guardiand wallet import-from-mnemonic\n")
+		u.Command("guardianctl wallet import-from-mnemonic\n")
 		u.EmptyLine()
 		return errors.New("guardian key not found")
 	}
@@ -125,12 +126,19 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = logger.Sync() }()
 
-	service, err := guardian.NewService(cfg, logger)
+	// The registration manager directly, not a whole guardian.Service: this verb
+	// needs one message signed and broadcast, and building the Service would drag
+	// the event monitor, the secret cache and the reveal loop in behind it. That
+	// mattered little in one binary and matters in two — `update` has always done
+	// it this way.
+	client, err := chain.NewClient(cfg, logger)
 	if err != nil {
-		return errors.Wrap(err, "failed to initialise guardian service")
+		return errors.Wrap(err, "failed to initialise chain client")
 	}
+	defer func() { _ = client.Close() }()
 
-	if err := service.RegisterWithOptions(cmd.Context(), &guardian.RegistrationOptions{
+	registration := guardian.NewRegistrationManager(cfg, client, logger)
+	if err := registration.RegisterWithOptions(cmd.Context(), &guardian.RegistrationOptions{
 		StakeAmount:            stakeAmount,
 		AvailableFrom:          availableFrom,
 		AvailableUntil:         availableUntil,
@@ -231,7 +239,7 @@ func showRegistrationSuccess(u *ui.Printer, cfg *config.Config, availableFrom, a
 		u.TextLn("   • Missing reveals while assigned will result in slashing penalties")
 	} else {
 		u.TextLn("   • Your guardian is NOT eligible to receive new secret assignments")
-		u.TextLn("   • To become eligible, run 'guardiand update --accepting-secrets=true'")
+		u.TextLn("   • To become eligible, run 'guardianctl update --accepting-secrets=true'")
 	}
 	u.Printf("   • Monitor your guardian's health at http://localhost:%d/health\n", cfg.HealthPort)
 	u.EmptyLine()

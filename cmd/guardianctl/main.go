@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	rootCmd := cli.NewGuardiandCmd()
+	rootCmd := cli.NewGuardianctlCmd()
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(rootCmd.OutOrStderr(), err)
 		os.Exit(1)

@@ -62,17 +62,17 @@ written and confirmed BEFORE the rotation transaction is broadcast.
 On-chain constraints: a flat burned rotation fee (one guardian-day of the
 master rate) and a minimum interval of one rotation per 432,000 blocks
 (~30 days, measured from the current epoch's effective height). Inside the
-window, 'guardiand update --accepting-secrets=false' gives identical forward
+window, 'guardianctl update --accepting-secrets=false' gives identical forward
 protection immediately and free.
 
 Rotation is NOT loss recovery: a lost key still misses every reveal encrypted
 to it. If the daemon is running, restart it after rotating (it also detects
 the new epoch and reloads, but a restart makes the cutover immediate).`,
 		Example: `  # Interactive rotation (prompts for the backup passphrase)
-  guardiand rotate-key
+  guardianctl rotate-key
 
   # Non-interactive
-  guardiand rotate-key --backup-output /secure/rotation.tfb \
+  guardianctl rotate-key --backup-output /secure/rotation.tfb \
     --backup-passphrase-file /secure/backup-pass --yes`,
 		RunE:         runRotateKey,
 		SilenceUsage: true,
@@ -118,7 +118,7 @@ func runRotateKey(cmd *cobra.Command, args []string) error {
 	}
 	if !bytes.Equal(record.EncryptionPublicKey, currentDerived[:]) {
 		return errors.Errorf(
-			"local share key derives %x but guardian %s is registered with %x — restore the correct key ('guardiand key restore') before rotating",
+			"local share key derives %x but guardian %s is registered with %x — restore the correct key ('guardianctl key restore') before rotating",
 			currentDerived[:], effective.GuardianAddress, record.EncryptionPublicKey)
 	}
 	currentEpoch := record.CurrentKeyEpoch

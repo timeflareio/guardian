@@ -67,13 +67,13 @@ independent secret). Store the bundle and its passphrase separately.
 key (BIP39 over the raw key bytes) — the human-typable fallback when no bundle
 is reachable. Treat the words exactly like the key itself.`,
 		Example: `  # Interactive backup (prompts for a backup passphrase)
-  guardiand key backup
+  guardianctl key backup
 
   # Non-interactive, explicit output path
-  guardiand key backup --output /secure/guardian.tfb --passphrase-file /secure/backup-pass
+  guardianctl key backup --output /secure/guardian.tfb --passphrase-file /secure/backup-pass
 
   # Also print the 24-word recovery phrase
-  guardiand key backup --show-mnemonic`,
+  guardianctl key backup --show-mnemonic`,
 		RunE:         runKeyBackup,
 		SilenceUsage: true,
 	}
@@ -236,13 +236,13 @@ The share key is written encrypted at rest (the at-rest passphrase is resolved
 from the configuration, or prompted for and stored beside the key). Keyring
 files from a bundle are restored into the configured keyring directory.`,
 		Example: `  # Restore from a bundle (prompts for the backup passphrase)
-  guardiand key restore --input /secure/guardian.tfb
+  guardianctl key restore --input /secure/guardian.tfb
 
   # Restore on an unreachable-chain host
-  guardiand key restore --input /secure/guardian.tfb --offline
+  guardianctl key restore --input /secure/guardian.tfb --offline
 
   # Reconstruct the share key from the 24 words (no keyring restore)
-  guardiand key restore --from-mnemonic`,
+  guardianctl key restore --from-mnemonic`,
 		RunE:         runKeyRestore,
 		SilenceUsage: true,
 	}
@@ -403,7 +403,7 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 			if configBytes, err := os.ReadFile(manager.GetConfigPath()); err == nil {
 				sum := sha256.Sum256(configBytes)
 				if hex.EncodeToString(sum[:]) != bundle.ConfigFingerprint {
-					u.Note("Config fingerprint differs from backup time — review 'guardiand config list' for drift")
+					u.Note("Config fingerprint differs from backup time — review 'guardianctl config list' for drift")
 				}
 			}
 		}
@@ -424,7 +424,7 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 	u.EmptyLine()
 	u.Note("Next steps:")
 	u.Text(ui.Indent1 + "• ")
-	u.Command("guardiand config doctor")
+	u.Command("guardianctl config doctor")
 	u.TextLn(" — confirm keys and configuration load")
 	u.Text(ui.Indent1 + "• ")
 	u.Command("guardiand start")

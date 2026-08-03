@@ -31,16 +31,16 @@ This command will display:
 The status check connects to the blockchain to retrieve current information
 and does not require the guardian service to be running.`,
 		Example: `  # Show basic guardian status
-  guardiand status
+  guardianctl status
 
   # Show detailed status information
-  guardiand status --detailed
+  guardianctl status --detailed
 
   # Output status in JSON format
-  guardiand status --format json
+  guardianctl status --format json
 
   # Check status with custom timeout
-  guardiand status --timeout 60`,
+  guardianctl status --timeout 60`,
 		RunE: runStatus,
 	}
 

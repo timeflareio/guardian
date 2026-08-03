@@ -2,10 +2,13 @@ package cli
 
 import (
 	"bytes"
+
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // The command layer had no tests at all until the output layer stopped writing
@@ -50,7 +53,7 @@ func newFixture(t *testing.T) *fixture {
 func (g *fixture) run(stdin string, args ...string) (string, error) {
 	g.t.Helper()
 	var out bytes.Buffer
-	root := NewRootCmd()
+	root := rootFor(args)
 	root.SetOut(&out)
 	root.SetErr(&out)
 	root.SetIn(strings.NewReader(stdin))
@@ -109,4 +112,17 @@ func (g *fixture) mode(path string) os.FileMode {
 		g.t.Fatalf("expected %s to exist: %v", path, err)
 	}
 	return info.Mode().Perm()
+}
+
+// daemonVerbs are the commands guardiand owns; everything else belongs to
+// guardianctl. The two sets are disjoint, so the first argument decides which
+// binary a test is driving — and a verb that moves between them makes the tests
+// that use it fail rather than silently testing the wrong root.
+var daemonVerbs = map[string]bool{"start": true, "health": true, "version": true}
+
+func rootFor(args []string) *cobra.Command {
+	if len(args) > 0 && daemonVerbs[args[0]] {
+		return NewGuardiandCmd()
+	}
+	return NewGuardianctlCmd()
 }

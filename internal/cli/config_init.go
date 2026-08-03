@@ -30,23 +30,23 @@ If the file already exists, this command will not overwrite it.
 
 Critical parameters can be set via flags or will be prompted interactively.`,
 		Example: `  # Initialize with interactive prompts
-  guardiand config init
+  guardianctl config init
 
   # Initialize with flags to skip all prompts  
-  guardiand config init \
+  guardianctl config init \
     --key-name [key-name] \
     --keyring-passphrase [password] \
     --encryption-public-key [64-char-hex]
 
   # Initialize with auto-generated keys (encrypted at rest by default)
-  guardiand config init \
+  guardianctl config init \
     --key-name [key-name] \
     --keyring-passphrase [password] \
     --encryption-key-passphrase [password] \
     --auto-generate-key
 
   # Initialize with custom keyring directory (for isolated setups)
-  guardiand config init \
+  guardianctl config init \
     --key-name [key-name] \
     --keyring-dir [/path/to/keyring] \
     --keyring-passphrase [password] \
@@ -78,7 +78,7 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 	// Check if config file already exists
 	if _, err := os.Stat(configPath); err == nil {
 		u.TextLn("Configuration file already exists at: " + configPath)
-		u.TextLn("Use 'guardiand config list' to view current settings.")
+		u.TextLn("Use 'guardianctl config list' to view current settings.")
 		return nil
 	}
 
@@ -156,13 +156,13 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 
 		u.TextLn(ui.Indent2 + "# Create a new signing key (shows the 24-word backup mnemonic once)")
 		u.Text(ui.Indent2)
-		u.Command("guardiand wallet create --name [key-name]\n")
+		u.Command("guardianctl wallet create --name [key-name]\n")
 		u.TextLn(ui.Indent2 + "# Or restore an existing key from its 24 words")
 		u.Text(ui.Indent2)
-		u.Command("guardiand wallet import-from-mnemonic --name [key-name]\n")
+		u.Command("guardianctl wallet import-from-mnemonic --name [key-name]\n")
 		u.TextLn(ui.Indent2 + "# View your wallet address")
 		u.Text(ui.Indent2)
-		u.Command("guardiand wallet show-address --name [key-name]\n")
+		u.Command("guardianctl wallet show-address --name [key-name]\n")
 
 		u.Note(ui.Indent1 + "Important notes:")
 		u.TextLn(ui.Indent2 + "• Back up your 24-word mnemonic securely")
@@ -292,7 +292,7 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				u.Warning("Key generation failed: %v", err)
 				u.Note(ui.Indent1 + "You can set the encryption key later with:" + ui.Indent1)
-				u.Command("guardiand config set encryption-public-key <64-hex-chars>\n\n")
+				u.Command("guardianctl config set encryption-public-key <64-hex-chars>\n\n")
 				encryptionKey = "" // Continue without key
 			} else {
 				if err := writeEncryptionKeyPassphraseFile(manager, passphrase); err != nil {
@@ -307,7 +307,7 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 				u.TextLn(ui.Indent2 + "• Public key:  " + publicKeyPath)
 				u.TextLn(ui.Indent2 + "• Public key hex: " + encryptionKey)
 				u.Warning("CRITICAL: Back up your private key securely!")
-				u.TextLn(ui.Indent2 + "• Run 'guardiand key backup' after registration for a portable encrypted bundle")
+				u.TextLn(ui.Indent2 + "• Run 'guardianctl key backup' after registration for a portable encrypted bundle")
 				u.TextLn(ui.Indent2 + "• Without the key, you cannot decrypt shares sent to you")
 				u.TextLn(ui.Indent2 + "• Lost keys prevent participation in reveals, resulting in slashing penalties\n")
 			}
@@ -317,7 +317,7 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 			if len(encryptionKey) != 64 {
 				u.Warning("Invalid key length: expected 64 characters, got %d", len(encryptionKey))
 				u.Note(ui.Indent1 + "You can set the correct encryption key later with:" + ui.Indent1)
-				u.Command("guardiand config set encryption-public-key <64-hex-chars>\n\n")
+				u.Command("guardianctl config set encryption-public-key <64-hex-chars>\n\n")
 				encryptionKey = "" // Continue without key
 			} else {
 				u.Success("Using provided encryption key: %s...\n", encryptionKey[:8])
@@ -412,17 +412,17 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		privateKeyPath := manager.GetPrivateKeyPath()
 		u.Path("%s\n", privateKeyPath)
 	} else {
-		u.Note("(empty - set later with 'guardiand config set encryption-public-key <key>')")
+		u.Note("(empty - set later with 'guardianctl config set encryption-public-key <key>')")
 	}
 
 	// Next steps with colors
 	u.Step("🚀 Next Steps:")
 	u.Text(ui.Indent1 + "• ")
-	u.Command("guardiand config list")
+	u.Command("guardianctl config list")
 	u.TextLn(" - view all settings")
 
 	u.Text(ui.Indent1 + "• ")
-	u.Command("guardiand register")
+	u.Command("guardianctl register")
 	u.TextLn(" - register your guardian with the network\n")
 
 	return nil

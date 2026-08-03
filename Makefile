@@ -12,6 +12,7 @@ include make/cleanup.mk
 
 # Project configuration
 APPNAME := guardiand
+CTLNAME := guardianctl
 
 # Default target - show help
 .DEFAULT_GOAL := help
@@ -26,16 +27,16 @@ config-help:
 	@echo "=========================="
 	@echo ""
 	@echo "Initialize configuration:"
-	@echo "  $(APPNAME) config init --key-name <guardian-key>"
+	@echo "  $(CTLNAME) config init --key-name <guardian-key>"
 	@echo ""
 	@echo "View configuration:"
-	@echo "  $(APPNAME) config show"
+	@echo "  $(CTLNAME) config show"
 	@echo ""
 	@echo "Set configuration values:"
-	@echo "  $(APPNAME) config set <key> <value>"
+	@echo "  $(CTLNAME) config set <key> <value>"
 	@echo ""
 	@echo "Register guardian:"
-	@echo "  $(APPNAME) register --stake-amount 10000000000uveil"
+	@echo "  $(CTLNAME) register --stake-amount 10000000000uveil"
 	@echo ""
 	@echo "Start guardian service:"
 	@echo "  $(APPNAME) start"

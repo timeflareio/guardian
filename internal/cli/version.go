@@ -23,7 +23,9 @@ func NewVersionCmd() *cobra.Command {
 func runVersion(cmd *cobra.Command, args []string) {
 	u := printer(cmd)
 	rev, modified := buildRevision()
-	u.Printf("Timeflare Guardian Service\n")
+	// Name the binary this is, not the project: both binaries carry this command
+	// and an operator comparing two versions needs to know which is which.
+	u.Printf("Timeflare %s\n", cmd.Root().Name())
 	u.Printf("Version:    %s\n", buildVersion())
 	if rev != "" {
 		state := "clean"

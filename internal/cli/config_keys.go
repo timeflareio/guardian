@@ -36,16 +36,16 @@ The passphrase comes from --passphrase-file, or an interactive prompt.
 
 This command will NEVER overwrite existing keys and will error immediately if keys already exist.`,
 		Example: `  # Create keys with default settings (prompts for a passphrase)
-  guardiand config create-encryption-key
+  guardianctl config create-encryption-key
 
   # Create keys non-interactively
-  guardiand config create-encryption-key --passphrase-file /secure/kek
+  guardianctl config create-encryption-key --passphrase-file /secure/kek
 
   # Create keys with custom filename
-  guardiand config create-encryption-key --file-name my-guardian
+  guardianctl config create-encryption-key --file-name my-guardian
 
   # Create keys in custom directory
-  guardiand config create-encryption-key --directory /path/to/keys`,
+  guardianctl config create-encryption-key --directory /path/to/keys`,
 		RunE: runConfigCreateEncryptionKey,
 	}
 
@@ -74,10 +74,10 @@ beside the key so the daemon can keep running unattended — pass
 The key file is replaced atomically and the result is verified by decrypting
 it again before the command reports success.`,
 		Example: `  # Interactive migration (prompts for a passphrase, asks about backups)
-  guardiand config migrate-key
+  guardianctl config migrate-key
 
   # Non-interactive migration for automated fleets
-  guardiand config migrate-key --passphrase-file /secure/kek --accept`,
+  guardianctl config migrate-key --passphrase-file /secure/kek --accept`,
 		RunE: runConfigMigrateKey,
 	}
 
@@ -152,8 +152,8 @@ func runConfigMigrateKey(cmd *cobra.Command, args []string) error {
 	// exactly the total-loss scenario this feature exists to prevent.
 	if !accept {
 		u.Warning("This encrypts %s in place. If the passphrase is lost, the key is unrecoverable.", keyPath)
-		if !u.Confirm("Confirm you hold an independent backup (guardiand key backup, or the 24-word mnemonic)") {
-			u.Warning("Migration cancelled — run 'guardiand key backup' first.")
+		if !u.Confirm("Confirm you hold an independent backup (guardianctl key backup, or the 24-word mnemonic)") {
+			u.Warning("Migration cancelled — run 'guardianctl key backup' first.")
 			u.EmptyLine()
 			return nil
 		}
@@ -299,7 +299,7 @@ func runConfigCreateEncryptionKey(cmd *cobra.Command, args []string) error {
 
 	u.Warning("CRITICAL SECURITY REMINDER:")
 	u.Printf(ui.Indent1+"• Keep %s.key and its passphrase SECRET and secure!\n", fileName)
-	u.TextLn(ui.Indent1 + "• Back up your private key in a safe location ('guardiand key backup')")
+	u.TextLn(ui.Indent1 + "• Back up your private key in a safe location ('guardianctl key backup')")
 	u.TextLn(ui.Indent1 + "• Without the private key, you cannot decrypt shares sent to you")
 	u.Printf(ui.Indent1+"• The public key (%s.hex) can be shared safely\n\n", fileName)
 

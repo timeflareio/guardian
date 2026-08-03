@@ -83,14 +83,22 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
-            os="${target%%/*}"; arch="${target##*/}"
-            out="guardiand-${GITHUB_REF_NAME}-${os}-${arch}"
-            echo "--> ${out}"
-            CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" go build -trimpath \
-              -o "dist/${out}" ./cmd/guardiand
+          # Both binaries. guardiand runs the service; guardianctl sets a
+          # guardian up and holds the key-custody verbs. An operator needs both
+          # on the host, and they must come from the same tag — a guardianctl
+          # that writes a configuration the daemon of another version does not
+          # understand is exactly the drift the pair is version-matched against.
+          for bin in guardiand guardianctl; do
+            for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
+              os="${target%%/*}"; arch="${target##*/}"
+              out="${bin}-${GITHUB_REF_NAME}-${os}-${arch}"
+              echo "--> ${out}"
+              CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" go build -trimpath \
+                -o "dist/${out}" "./cmd/${bin}"
+            done
           done
-          ( cd dist && sha256sum guardiand-* > "guardiand-${GITHUB_REF_NAME}-checksums.txt" )
+          ( cd dist && sha256sum guardiand-* guardianctl-* \
+              > "guardian-${GITHUB_REF_NAME}-checksums.txt" )
           ls -la dist/
 
       # Assert the artefacts identify themselves as this release. Nothing sets
@@ -102,12 +110,14 @@ jobs:
       - name: Assert the binaries report this tag
         run: |
           set -euo pipefail
-          reported="$("./dist/guardiand-${GITHUB_REF_NAME}-linux-amd64" version | awk '/^Version:/{print $2}')"
-          echo "reported: ${reported}"
-          if [ "${reported}" != "${GITHUB_REF_NAME}" ]; then
-            echo "::error::binary reports '${reported}' but this release is '${GITHUB_REF_NAME}'. The version is derived from git at build time, so this usually means the tag was not reachable from the checkout (fetch-depth) or .git was absent."
-            exit 1
-          fi
+          for bin in guardiand guardianctl; do
+            reported="$("./dist/${bin}-${GITHUB_REF_NAME}-linux-amd64" version | awk '/^Version:/{print $2}')"
+            echo "reported: ${bin} ${reported}"
+            if [ "${reported}" != "${GITHUB_REF_NAME}" ]; then
+              echo "::error::${bin} reports '${reported}' but this release is '${GITHUB_REF_NAME}'. The version is derived from git at build time, so this usually means the tag was not reachable from the checkout (fetch-depth) or .git was absent."
+              exit 1
+            fi
+          done
           echo "✅ binaries report ${GITHUB_REF_NAME}"
 
       - name: Compose release notes
@@ -121,8 +131,14 @@ jobs:
             echo
             echo "| Artefact | How to consume |"
             echo "|---|---|"
-            echo "| Binaries | \`guardiand-${GITHUB_REF_NAME}-{darwin,linux}-{arm64,amd64}\` below, with \`checksums.txt\` |"
-            echo "| Container image | \`ghcr.io/timeflareio/guardiand:${GITHUB_REF_NAME}\` (distroless) |"
+            echo "| Daemon | \`guardiand-${GITHUB_REF_NAME}-{darwin,linux}-{arm64,amd64}\` below |"
+            echo "| Operator tool | \`guardianctl-${GITHUB_REF_NAME}-{darwin,linux}-{arm64,amd64}\` below |"
+            echo "| Checksums | \`guardian-${GITHUB_REF_NAME}-checksums.txt\` (covers both) |"
+            echo "| Container image | \`ghcr.io/timeflareio/guardiand:${GITHUB_REF_NAME}\` (distroless, ships both binaries) |"
+            echo
+            echo "Install **both** and keep them at the same tag. \`guardiand\` runs the"
+            echo "service; \`guardianctl\` sets a guardian up and holds every verb that can"
+            echo "write or export key material — which is precisely why the daemon does not."
             echo
             echo "\`go install\` cannot serve this module: it carries \`replace\`"
             echo "directives for the cosmos-sdk pin set, and Go refuses to install any"

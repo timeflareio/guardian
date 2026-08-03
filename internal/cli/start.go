@@ -47,7 +47,7 @@ flags below, in that order of increasing precedence.`,
   guardiand start --log-level debug --rpc-endpoint http://node:26657
 
   # Register guardian first if not already registered
-  guardiand register && guardiand start`,
+  guardianctl register && guardiand start`,
 		RunE: runStart,
 	}
 
@@ -138,7 +138,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		u.EmptyLine()
 		u.Error("Guardian Pre-flight Check Failed: %v", err)
 		u.Text(ui.Indent1 + "If the guardian is not yet registered, run: ")
-		u.Command("guardiand register")
+		u.Command("guardianctl register")
 		u.EmptyLine()
 		return errors.Wrap(err, "guardian pre-flight check failed")
 	}

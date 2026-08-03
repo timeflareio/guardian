@@ -10,6 +10,16 @@ accepts secret assignments from the chain, holds one Shamir share of each
 secret's key, and reveals that share when the time-lock opens — earning a reward
 for doing so, and losing bond for revealing early or not at all.
 
+It ships as **two binaries**. `guardiand` runs the service — `start`, `health`,
+`version` — and `guardianctl` is the operator tool: `config`, `wallet`, `key`,
+`register`, `update`, `rotate-key`, `status`. The division is a custody decision,
+not packaging: the daemon holds the epoch keyring and is the only component with
+network-facing surface, so it must carry no code that can mint, export or rewrite
+key material. `make verify` checks that on the linked binary
+(`verify-daemon-symbols`) — a key verb added to the daemon's root fails the
+build. Both roots live in `internal/cli`; the linker's reachability is what keeps
+them apart, which is why the check is on symbols rather than imports.
+
 It holds long-lived key material. `docs/guides/GUARDIAN_KEY_CUSTODY.md` is the
 authority on how, and any change touching `internal/custody/` should be read
 against it first.
@@ -81,10 +91,10 @@ primitives as a module and lets that module's own suites prove them.
 ## Essential Commands
 
 - `make test` — all unit tests
-- `make verify` — format, lint, imports, vet, **boundaries, carried pins,
-  vendored vectors**
+- `make verify` — format, lint, imports, vet, **module boundary, output
+  boundary, daemon symbols, carried pins, vendored vectors**
 - `make clean` — apply formatting and lint fixes
-- `make build` — build and install `guardiand`
+- `make build` — build and install `guardiand` and `guardianctl`
 - `make go-govulncheck` — vulnerability scan (advisory; accepted findings and
   their reachability reasoning are in `.govulncheck-accepted`)
 

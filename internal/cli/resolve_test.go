@@ -106,8 +106,8 @@ func TestVersionNeedsNoConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("version failed with no configuration present: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "Timeflare Guardian Service") {
-		t.Errorf("unexpected version output:\n%s", out)
+	if !strings.Contains(out, "Timeflare guardiand") {
+		t.Errorf("version does not name the binary it is:\n%s", out)
 	}
 }
 

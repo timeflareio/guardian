@@ -27,7 +27,7 @@ func showNoConfigMessage(u *ui.Printer, configPath string) {
 	u.Path("%s\n", configPath)
 
 	u.Text(ui.Indent1 + "Run: ")
-	u.Command("guardiand config init")
+	u.Command("guardianctl config init")
 	u.TextLn(" to create the configuration file.")
 
 	u.Text(ui.Indent1 + "Or use: ")
@@ -85,7 +85,7 @@ func runConfigHelp(cmd *cobra.Command, args []string) error {
 	u.Command("%s\n", configPath)
 	u.EmptyLine()
 	u.Text(ui.Indent1 + "Use: ")
-	u.Command("guardiand config list")
+	u.Command("guardianctl config list")
 	u.EmptyLine()
 	u.EmptyLine()
 
@@ -100,25 +100,25 @@ func NewConfigSetCmd() *cobra.Command {
 		Short: "Set a configuration value",
 		Long: `Set a configuration value for the specified key.
 
-Use 'guardiand config list' to see all available configuration parameters.
+Use 'guardianctl config list' to see all available configuration parameters.
 Parameters can be specified using either underscore (chain_id) or hyphen (chain-id) format.`,
 		Example: `  # Set chain ID
-  guardiand config set chain-id timeflare-1
+  guardianctl config set chain-id timeflare-1
 
   # Set guardian key name
-  guardiand config set key-name guardian
+  guardianctl config set key-name guardian
 
   # Set RPC endpoint
-  guardiand config set rpc-endpoint http://localhost:26657
+  guardianctl config set rpc-endpoint http://localhost:26657
 
   # Set stake amount
-  guardiand config set stake-amount 15000uveil
+  guardianctl config set stake-amount 15000uveil
 
   # Set numeric values
-  guardiand config set retry-attempts 5
+  guardianctl config set retry-attempts 5
 
   # Set boolean values
-  guardiand config set enable-metrics false`,
+  guardianctl config set enable-metrics false`,
 		Args: cobra.ExactArgs(2),
 		RunE: runConfigSet,
 	}
@@ -133,10 +133,10 @@ func NewConfigGetCmd() *cobra.Command {
 		Short: "Get a configuration value",
 		Long:  `Get the current value for the specified configuration key.`,
 		Example: `  # Get chain ID
-  guardiand config get chain-id
+  guardianctl config get chain-id
 
   # Get key name
-  guardiand config get key-name`,
+  guardianctl config get key-name`,
 		Args: cobra.ExactArgs(1),
 		RunE: runConfigGet,
 	}
@@ -151,7 +151,7 @@ func NewConfigListCmd() *cobra.Command {
 		Short: "List all configuration values",
 		Long:  `Display all current configuration key-value pairs.`,
 		Example: `  # List all configuration
-  guardiand config list`,
+  guardianctl config list`,
 		RunE: runConfigList,
 	}
 
@@ -170,7 +170,7 @@ This checks:
 - Values are in correct format
 - Guardian key exists in timeflared keyring (if possible)`,
 		Example: `  # Validate current configuration
-  guardiand config validate`,
+  guardianctl config validate`,
 		RunE: runConfigValidate,
 	}
 
@@ -321,8 +321,8 @@ func runConfigList(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	u.Printf("\nUse 'guardiand config set <key> <value>' to change values.\n")
-	u.Printf("Use 'guardiand config get <key>' to view a specific value.\n\n")
+	u.Printf("\nUse 'guardianctl config set <key> <value>' to change values.\n")
+	u.Printf("Use 'guardianctl config get <key>' to view a specific value.\n\n")
 
 	return nil
 }

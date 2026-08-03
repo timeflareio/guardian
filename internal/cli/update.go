@@ -27,19 +27,19 @@ All parameters are optional - only specify the ones you want to change:
 - accepting-secrets: Whether to accept new secret assignments
 
 Note: Encryption keys are not updated here — each epoch's key binding is
-permanently immutable; use 'guardiand rotate-key' to rotate forward for
+permanently immutable; use 'guardianctl rotate-key' to rotate forward for
 future assignments.`,
 		Example: `  # Update availability window
-  guardiand update --available-until 28800
+  guardianctl update --available-until 28800
 
   # Add more float
-  guardiand update --stake 5000000000uveil
+  guardianctl update --stake 5000000000uveil
 
   # Stop accepting new secrets temporarily
-  guardiand update --accepting-secrets=false
+  guardianctl update --accepting-secrets=false
 
   # Update multiple parameters at once
-  guardiand update --available-until 14400 --accepting-secrets=true`,
+  guardianctl update --available-until 14400 --accepting-secrets=true`,
 		RunE:         runUpdate,
 		SilenceUsage: true, // Don't show usage on errors
 	}
@@ -76,7 +76,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	// Validate at least one update parameter is provided
 	if !availableFromFlag && !availableUntilFlag && !stakeFlag && !acceptingSecretsFlag {
-		return errors.New("no update parameters provided — see 'guardiand update --help'")
+		return errors.New("no update parameters provided — see 'guardianctl update --help'")
 	}
 
 	opts := chain.GuardianUpdateOptions{}
@@ -191,6 +191,6 @@ func showUpdateSuccess(u *ui.Printer, cfg *config.Config, txHash string) {
 	u.Printf("   • Chain ID:    %s\n", cfg.ChainID)
 	u.EmptyLine()
 	u.TextLn("📋 Next Steps:")
-	u.TextLn("   • Use 'guardiand status' to verify your updated registration")
+	u.TextLn("   • Use 'guardianctl status' to verify your updated registration")
 	u.EmptyLine()
 }

@@ -17,8 +17,21 @@ material, which changes what a release has to guarantee.*
 
 | Artefact | Consumed by |
 |---|---|
-| `guardiand` binaries — darwin/linux × arm64/amd64, with checksums | guardian operators |
-| distroless image `ghcr.io/timeflareio/guardiand:vX.Y.Z` | container deployments, the chain's compose devnet |
+| `guardiand` binaries — darwin/linux × arm64/amd64 | guardian operators |
+| `guardianctl` binaries — same matrix | guardian operators |
+| one `checksums.txt` covering both | guardian operators |
+| distroless image `ghcr.io/timeflareio/guardiand:vX.Y.Z`, shipping both binaries | container deployments, the chain's compose devnet |
+
+**Two binaries, one version.** `guardiand` runs the service; `guardianctl` holds
+configuration, the signing key, share-key backup and restore, registration and
+rotation — every verb that can write or export key material, which is exactly why
+the daemon carries none of them
+([PENDING_DAEMON_SURFACE_SEPARATION_PLAN.md](PENDING_DAEMON_SURFACE_SEPARATION_PLAN.md)
+§4 Phase 5). They are released from the same tag and must be installed at the same
+version: `guardianctl` writes the configuration and key layout the daemon reads,
+so a mismatched pair is the same class of silent divergence as a stale
+cosmos-sdk pin. The release notes say so, and one checksums file covering both
+makes the pairing awkward to break by accident.
 
 **No Go module.** Nothing imports this repository, so the tag exists to identify
 a build, not to serve a library.
