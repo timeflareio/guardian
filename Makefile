@@ -170,6 +170,47 @@ verify-pins:
 	echo "✅ Carried pins match the chain"
 
 ###############################################################################
+###                        Vulnerability gating                            ###
+###############################################################################
+
+# `go-govulncheck` (make/go-quality.mk) reports everything and exits non-zero on
+# any reachable finding. That is the right behaviour for a human reading output,
+# but useless as a gate here: this module carries a permanently-unfixable
+# advisory (see .govulncheck-accepted), so the raw target can never pass.
+#
+# This target is the gate. It fails only on reachable findings that are NOT
+# accepted, and prints a reminder for each accepted one that is still triggering —
+# so an accepted advisory stays visible rather than becoming invisible. Without
+# it, .govulncheck-accepted would be a file nothing reads: a documented gate that
+# does not exist, which is worse than no gate at all.
+
+## fail only on reachable vulnerabilities that are not in .govulncheck-accepted
+govulncheck-gated:
+	@command -v govulncheck >/dev/null 2>&1 || go install golang.org/x/vuln/cmd/govulncheck@latest
+	@command -v jq >/dev/null 2>&1 || { echo "❌ jq is required for the gated scan"; exit 1; }
+	@found=$$(govulncheck -format json ./... | \
+		jq -r 'select(.finding != null and .finding.trace[0].function != null) | .finding.osv' | sort -u); \
+	accepted=$$(grep -E '^GO-' .govulncheck-accepted 2>/dev/null || true); \
+	remaining=""; \
+	for id in $$found; do \
+		echo "$$accepted" | grep -qxF "$$id" || remaining="$$remaining $$id"; \
+	done; \
+	if [ -n "$$remaining" ]; then \
+		echo "❌ Reachable vulnerabilities not accepted:$$remaining"; \
+		echo "   Fix by bumping the affected module. Only if genuinely unfixable, add"; \
+		echo "   to .govulncheck-accepted with a reason, the reachability path, and an"; \
+		echo "   exit condition — and check the path really is this module's, not one"; \
+		echo "   copied from another repository."; \
+		echo "   Details:"; \
+		govulncheck ./... || true; \
+		exit 1; \
+	fi; \
+	for id in $$found; do \
+		echo "  ⚠️  accepted advisory triggered: $$id (see .govulncheck-accepted)"; \
+	done; \
+	echo "✅ No unaccepted reachable vulnerabilities"
+
+###############################################################################
 ###                        Chain vector corpus                             ###
 ###############################################################################
 
@@ -271,5 +312,5 @@ info: mod-info
 
 .PHONY: config-help status test test-unit bench
 .PHONY: build install build-binary clean verify format format-check lint lint-check imports imports-check vet
-.PHONY: verify-pins vectors-verify vectors-sync
+.PHONY: verify-pins vectors-verify vectors-sync govulncheck-gated
 .PHONY: clean-all clean-temp clean-cov clean-bin clean-cache update-deps tidy download info

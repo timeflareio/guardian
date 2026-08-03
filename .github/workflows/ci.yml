@@ -76,10 +76,13 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      # Advisory: govulncheck findings depend on upstream advisories outside our
-      # control, including ones with no fix. Accepted entries and their
-      # reachability reasoning live in .govulncheck-accepted.
-      - name: Audit Go dependencies
+      # The GATED scan, not the raw one. This module carries a permanently
+      # unfixable advisory (openpgp via the SDK keyring — see
+      # .govulncheck-accepted), so `make go-govulncheck` can never pass and would
+      # make this job a permanent red that everyone learns to ignore. The gate
+      # fails only on findings that are NOT accepted, and still prints the
+      # accepted ones so they stay visible.
+      - name: Audit Go dependencies (gated)
         env:
           GOTOOLCHAIN: auto
-        run: make go-govulncheck
+        run: make govulncheck-gated
