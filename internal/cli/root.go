@@ -40,6 +40,7 @@ the service and reports on it, and deliberately carries no code that can write
 or export key material.`,
 	}
 	addConfigPathFlag(root)
+	disableCompletionCmd(root)
 
 	root.AddCommand(NewStartCmd())
 	root.AddCommand(NewHealthCmd())
@@ -61,6 +62,7 @@ This is the operator's tool: configuration, the signing key, share-key backup
 and restore, registration, and key rotation. The daemon itself is ` + daemonName + `.`,
 	}
 	addConfigPathFlag(root)
+	disableCompletionCmd(root)
 
 	root.AddCommand(NewConfigCmd())
 	root.AddCommand(NewWalletCmd())
@@ -81,4 +83,13 @@ and restore, registration, and key rotation. The daemon itself is ` + daemonName
 func addConfigPathFlag(root *cobra.Command) {
 	root.PersistentFlags().String(configFlagName, "",
 		"config file path (default is "+config.DefaultConfigRelativePath+")")
+}
+
+// disableCompletionCmd drops the shell-completion generator cobra adds to every
+// root by default. Neither binary advertises it: nothing in the guides installs
+// the generated script, and the image it ships in is distroless, so there is no
+// shell in it to complete. Removing it keeps both help listings to the verbs
+// this repository actually implements.
+func disableCompletionCmd(root *cobra.Command) {
+	root.CompletionOptions.DisableDefaultCmd = true
 }
