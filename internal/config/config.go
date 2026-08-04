@@ -66,7 +66,7 @@ type Config struct {
 	Denom            string  `config:"denom" group:"Economics" desc:"Base denomination for the network"`
 	GasPrice         string  `config:"gas_price" group:"Economics" desc:"Gas price for transactions (e.g. 0.1uveil)"`
 	GasAdjustment    float64 `config:"gas_adjustment" group:"Economics" desc:"Gas adjustment multiplier applied to simulation results"`
-	StakeAmount      string  `config:"stake_amount" group:"Economics" desc:"Default float deposit for 'guardiand register' (flag-overridable)"`
+	StakeAmount      string  `config:"stake_amount" group:"Economics" desc:"Default float deposit for 'guardianctl register' (flag-overridable)"`
 	FeeBufferPercent int     `config:"fee_buffer_percent" group:"Economics" desc:"Balance headroom (percent of deposit) required beyond the deposit for fees"`
 
 	// Chain interaction
@@ -114,7 +114,7 @@ type Config struct {
 	DashboardPort   int  `config:"dashboard_port" group:"Monitoring" desc:"Operator dashboard port"`
 	// Displayed as set/not set rather than as the hash itself: a 60-character
 	// blob in an operator's config report is noise, not a disclosure risk.
-	DashboardPasswordHash string `config:"dashboard_password_hash" group:"Monitoring" desc:"bcrypt hash of the dashboard password (set it with 'guardiand config set-dashboard-password')" display:"presence"`
+	DashboardPasswordHash string `config:"dashboard_password_hash" group:"Monitoring" desc:"bcrypt hash of the dashboard password (set it with 'guardianctl config set-dashboard-password')" display:"presence"`
 	// TLS for the dashboard listener alone; health and metrics are unaffected.
 	// Both or neither. Without it Basic auth defends against unauthorised
 	// readers but not against a network eavesdropper — base64 is not

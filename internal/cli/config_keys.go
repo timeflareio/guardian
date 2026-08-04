@@ -3,7 +3,6 @@ package cli
 import (
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -208,25 +207,11 @@ func runConfigCreateEncryptionKey(cmd *cobra.Command, args []string) error {
 	fileName, _ := cmd.Flags().GetString("file-name")
 	directory, _ := cmd.Flags().GetString("directory")
 
-	// Determine directory - use flag if provided, otherwise derive from config path
-	var expandedDir string
+	// Determine directory - use flag if provided, otherwise derive from config
+	// path. The flag is expanded by the same rules as a path-tagged field.
+	expandedDir := manager.GetKeyDirectory()
 	if directory != "" {
-		// User provided explicit directory, expand it
-		expandedDir = os.ExpandEnv(directory)
-		if strings.HasPrefix(directory, "~") {
-			homeDir, err := os.UserHomeDir()
-			if err != nil {
-				return errors.Wrap(err, "failed to get home directory: %w")
-			}
-			if directory == "~" {
-				expandedDir = homeDir
-			} else if strings.HasPrefix(directory, "~/") {
-				expandedDir = filepath.Join(homeDir, directory[2:])
-			}
-		}
-	} else {
-		// No directory flag provided, derive from config path
-		expandedDir = manager.GetKeyDirectory()
+		expandedDir = config.ExpandPath(directory)
 	}
 
 	// Define file paths

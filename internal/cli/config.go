@@ -10,12 +10,6 @@ import (
 	"github.com/timeflareio/guardian/internal/config"
 )
 
-// ensureGuardianDirectory creates the guardian directory if it doesn't exist
-func ensureGuardianDirectory(manager *config.Manager) error {
-	// Use the config manager to get the correct key directory
-	return manager.EnsureDirectoriesExist()
-}
-
 // showNoConfigMessage displays a consistent "no configuration found" message
 func showNoConfigMessage(u *ui.Printer, configPath string) {
 	u.EmptyLine()
@@ -248,63 +242,40 @@ func runConfigList(cmd *cobra.Command, args []string) error {
 	// printed. config doctor never had the bug — it has always read this.
 	groupOrder := config.GroupOrder()
 
+	// Column widths come from the data rather than from guessed constants. The
+	// guesses were 25 for the key and column 90 for the description, and a key
+	// longer than 25 (encryption_private_key_path is 27) shifted its whole row
+	// out of alignment. Padding inside the coloured write also removes the need
+	// to measure a string with escape codes in it.
+	keyWidth, valueWidth := 0, 0
+	for _, group := range groups {
+		for key, item := range group {
+			keyWidth = max(keyWidth, len(key))
+			valueWidth = max(valueWidth, len(listValue(item.Value)))
+		}
+	}
+
 	for i, groupName := range groupOrder {
 		group, exists := groups[groupName]
 		if !exists || len(group) == 0 {
 			continue
 		}
 
-		// Print group header
 		u.Header("▶ %s", groupName)
 
-		// Sort keys within group for consistent display
-		var keys []string
+		keys := make([]string, 0, len(group))
 		for key := range group {
 			keys = append(keys, key)
 		}
 		sort.Strings(keys)
 
-		// Print each configuration item
 		for _, key := range keys {
 			item := group[key]
-			value := item.Value
-
-			// Format empty values nicely - we'll handle this inline
-
-			// Truncate very long values for display
-			displayValue := value
-			if len(value) > 60 {
-				displayValue = value[:57] + "..."
-			}
-
-			// Calculate actual display length (without color codes)
-			actualLen := 2 + 25 + 3 + len(ui.StripANSI(displayValue)) // "  " + key + " = " + value
-
-			// Print key-value pair with indentation
 			u.Text("  ")
-			u.Key("%-25s", key)
+			u.Key("%-*s", keyWidth, key)
 			u.Text(" = ")
-			if value == "" {
-				u.Text("(empty)")
-			} else {
-				u.Value("%s", displayValue)
-			}
-
-			// Add description aligned at column 90
-			targetCol := 90
-			if actualLen < targetCol {
-				spaces := targetCol - actualLen
-				u.Printf("%*s", spaces, "")
-			} else {
-				u.Text("  ")
-			}
-
-			descText := strings.ToLower(item.Description)
-			if len(descText) > 70 {
-				descText = descText[:67] + "..."
-			}
-			u.Printf("# %s", descText)
-			u.EmptyLine()
+			u.Value("%-*s", valueWidth, listValue(item.Value))
+			u.Printf("  # %s\n", strings.ToLower(item.Description))
 		}
 
 		// Add spacing between groups (except for last group)
@@ -317,6 +288,15 @@ func runConfigList(cmd *cobra.Command, args []string) error {
 	u.Printf("Use 'guardianctl config get <key>' to view a specific value.\n\n")
 
 	return nil
+}
+
+// listValue is how a value reads in the listing: an unset one says so rather
+// than leaving the column blank.
+func listValue(value string) string {
+	if value == "" {
+		return "(empty)"
+	}
+	return value
 }
 
 func runConfigValidate(cmd *cobra.Command, args []string) error {

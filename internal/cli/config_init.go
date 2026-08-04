@@ -406,7 +406,7 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		passphraseFile := filepath.Join(keyDir, "keyring_passphrase")
 
 		// Ensure directory exists
-		if err := ensureGuardianDirectory(manager); err != nil {
+		if err := manager.EnsureDirectoriesExist(); err != nil {
 			return errors.Wrap(err, "failed to create guardian directory")
 		}
 

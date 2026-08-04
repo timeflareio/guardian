@@ -41,8 +41,9 @@ func runConfigDoctor(cmd *cobra.Command, args []string) error {
 	u.Note("Effective values (file + environment overrides), as the service consumes them:")
 	u.EmptyLine()
 
+	grouped := manager.ListAllGrouped()
 	for _, group := range config.GroupOrder() {
-		items := manager.ListAllGrouped()[group]
+		items := grouped[group]
 		keys := make([]string, 0, len(items))
 		for key := range items {
 			keys = append(keys, key)

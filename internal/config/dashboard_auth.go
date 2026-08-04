@@ -35,7 +35,7 @@ func HashPassword(password string) (string, error) {
 // set time beats discovering it as a dashboard that rejects every credential.
 func ValidatePasswordHash(hash string) error {
 	if _, err := bcrypt.Cost([]byte(hash)); err != nil {
-		return fmt.Errorf("not a bcrypt hash — set it with 'guardiand config set-dashboard-password': %w", err)
+		return fmt.Errorf("not a bcrypt hash — set it with 'guardianctl config set-dashboard-password': %w", err)
 	}
 	return nil
 }
