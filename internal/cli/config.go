@@ -43,6 +43,11 @@ func NewConfigCmd() *cobra.Command {
 
 Configuration is stored in ~/.timeflare/guardian/config.yaml by default.
 Use --config-path to specify a different location.`,
+		// Without this a mistyped or retired subcommand — `config validate`,
+		// which this command used to have — is swallowed as an argument and
+		// answered with the help text and exit zero, which in a script is
+		// indistinguishable from having run.
+		Args: cobra.NoArgs,
 		RunE: runConfigHelp,
 	}
 
@@ -51,7 +56,6 @@ Use --config-path to specify a different location.`,
 	cmd.AddCommand(NewConfigSetCmd())
 	cmd.AddCommand(NewConfigGetCmd())
 	cmd.AddCommand(NewConfigListCmd())
-	cmd.AddCommand(NewConfigValidateCmd())
 	cmd.AddCommand(NewConfigDoctorCmd())
 	cmd.AddCommand(NewConfigCreateEncryptionKeyCmd())
 	cmd.AddCommand(NewConfigMigrateKeyCmd())
@@ -152,25 +156,6 @@ func NewConfigListCmd() *cobra.Command {
 	return cmd
 }
 
-// NewConfigValidateCmd creates the config validate command
-func NewConfigValidateCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "validate",
-		Short: "Validate configuration",
-		Long: `Validate the current configuration for completeness and correctness.
-
-This checks:
-- All required fields are present
-- Values are in correct format
-- Guardian key exists in timeflared keyring (if possible)`,
-		Example: `  # Validate current configuration
-  guardianctl config validate`,
-		RunE: runConfigValidate,
-	}
-
-	return cmd
-}
-
 func runConfigSet(cmd *cobra.Command, args []string) error {
 	u := printer(cmd)
 	key := args[0]
@@ -227,20 +212,11 @@ func runConfigList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get grouped configuration
-	groups := manager.ListAllGrouped()
+	groups := orderedConfigGroups(manager)
 
-	// Print header
 	u.Header("Guardian Configuration")
 	u.Text("Config file: ")
 	u.Path("%s\n\n", manager.GetConfigPath())
-
-	// Ask the registry for the display order rather than listing it here. A
-	// second copy of these names drifted from the registry's once already, and
-	// because an unrecognised name is skipped rather than reported, every group
-	// silently vanished from the output while the header and footer still
-	// printed. config doctor never had the bug — it has always read this.
-	groupOrder := config.GroupOrder()
 
 	// Column widths come from the data rather than from guessed constants. The
 	// guesses were 25 for the key and column 90 for the description, and a key
@@ -249,37 +225,24 @@ func runConfigList(cmd *cobra.Command, args []string) error {
 	// to measure a string with escape codes in it.
 	keyWidth, valueWidth := 0, 0
 	for _, group := range groups {
-		for key, item := range group {
+		for _, key := range group.Keys {
 			keyWidth = max(keyWidth, len(key))
-			valueWidth = max(valueWidth, len(listValue(item.Value)))
+			valueWidth = max(valueWidth, len(listValue(group.Items[key].Value)))
 		}
 	}
 
-	for i, groupName := range groupOrder {
-		group, exists := groups[groupName]
-		if !exists || len(group) == 0 {
-			continue
-		}
-
-		u.Header("▶ %s", groupName)
-
-		keys := make([]string, 0, len(group))
-		for key := range group {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-
-		for _, key := range keys {
-			item := group[key]
+	for i, group := range groups {
+		u.Header("▶ %s", group.Name)
+		for _, key := range group.Keys {
+			item := group.Items[key]
 			u.Text("  ")
 			u.Key("%-*s", keyWidth, key)
 			u.Text(" = ")
 			u.Value("%-*s", valueWidth, listValue(item.Value))
 			u.Printf("  # %s\n", strings.ToLower(item.Description))
 		}
-
 		// Add spacing between groups (except for last group)
-		if i < len(groupOrder)-1 {
+		if i < len(groups)-1 {
 			u.EmptyLine()
 		}
 	}
@@ -290,6 +253,37 @@ func runConfigList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// configGroup is one section of the configuration, ready to render: the group's
+// name, its keys in display order, and the items behind them.
+type configGroup struct {
+	Name  string
+	Keys  []string
+	Items map[string]config.ConfigItem
+}
+
+// orderedConfigGroups walks the configuration in the registry's own group order
+// with each group's keys sorted. Both `config list` and `config doctor` render
+// from this, so a group or field added to the registry reaches both without
+// either being touched — and neither can carry a stale copy of the group names,
+// which is how `config list` once came to print nothing at all.
+func orderedConfigGroups(manager *config.Manager) []configGroup {
+	grouped := manager.ListAllGrouped()
+	groups := make([]configGroup, 0, len(grouped))
+	for _, name := range config.GroupOrder() {
+		items := grouped[name]
+		if len(items) == 0 {
+			continue
+		}
+		keys := make([]string, 0, len(items))
+		for key := range items {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		groups = append(groups, configGroup{Name: name, Keys: keys, Items: items})
+	}
+	return groups
+}
+
 // listValue is how a value reads in the listing: an unset one says so rather
 // than leaving the column blank.
 func listValue(value string) string {
@@ -297,22 +291,4 @@ func listValue(value string) string {
 		return "(empty)"
 	}
 	return value
-}
-
-func runConfigValidate(cmd *cobra.Command, args []string) error {
-	u := printer(cmd)
-	// Use the global config manager (respects --config-path flag)
-	// Load current config - require file to exist
-	manager, _, err := requireConfig(cmd)
-	if err != nil {
-		return err
-	}
-
-	// Validate config
-	if err := manager.Validate(); err != nil {
-		return errors.Wrap(err, "configuration validation failed")
-	}
-
-	u.TextLn("Configuration is valid ✓\n")
-	return nil
 }

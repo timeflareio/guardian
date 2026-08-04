@@ -64,6 +64,29 @@ func TestConfigDoctorFailsOnUnloadableKey(t *testing.T) {
 	}
 }
 
+// --config-only is what `config validate` used to answer: is the configuration
+// itself consistent, on a host whose key material may not be in place yet. It
+// has to pass exactly where the full report fails for want of a key.
+func TestConfigDoctorConfigOnlySkipsTheKeyChecks(t *testing.T) {
+	g := newFixture(t)
+	g.initialised("guardian-one")
+	if err := os.Remove(g.get("encryption-private-key-path")); err != nil {
+		t.Fatal(err)
+	}
+
+	if out, err := g.run("", "config", "doctor"); err == nil {
+		t.Fatalf("the full report passed with no share key present:\n%s", out)
+	}
+
+	out := g.mustRun("", "config", "doctor", "--config-only")
+	if !strings.Contains(out, "Validation:") {
+		t.Errorf("--config-only did not report validation:\n%s", out)
+	}
+	if strings.Contains(out, "Encryption key:") || strings.Contains(out, "Signing key:") {
+		t.Errorf("--config-only reached for key material:\n%s", out)
+	}
+}
+
 // The address in the configuration and the address the key derives must agree;
 // a guardian registered under one and signing with the other reveals nothing.
 func TestConfigDoctorFailsOnAddressMismatch(t *testing.T) {

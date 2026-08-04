@@ -1,13 +1,10 @@
 package cli
 
 import (
-	"sort"
-
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/timeflareio/guardian/internal/chain"
 	"github.com/timeflareio/guardian/internal/cli/ui"
-	"github.com/timeflareio/guardian/internal/config"
 )
 
 // `config doctor` reports the configuration as the running service would
@@ -15,19 +12,35 @@ import (
 
 // NewConfigDoctorCmd creates the config doctor command
 func NewConfigDoctorCmd() *cobra.Command {
-	return &cobra.Command{
+	var configOnly bool
+
+	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Report effective configuration and check operational readiness",
 		Long: `Report the configuration exactly as the running service would consume it
 (file + GUARDIAN_* environment overrides, typed effective values), then check:
 - cross-field validity (ports, endpoints, durations)
 - the signing key resolves in the keyring
-- the share-decryption private key loads`,
-		RunE: runConfigDoctor,
+- the share-decryption private key loads
+
+--config-only stops after the first of those, for a host where the key material
+is not expected to be present yet.`,
+		Example: `  # Full report
+  guardianctl config doctor
+
+  # Configuration consistency alone, without touching key material
+  guardianctl config doctor --config-only`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runConfigDoctor(cmd, configOnly)
+		},
 	}
+
+	cmd.Flags().BoolVar(&configOnly, "config-only", false, "check configuration consistency only, skipping the signing and share key checks")
+
+	return cmd
 }
 
-func runConfigDoctor(cmd *cobra.Command, args []string) error {
+func runConfigDoctor(cmd *cobra.Command, configOnly bool) error {
 	u := printer(cmd)
 	manager, _, err := requireConfig(cmd)
 	if err != nil {
@@ -41,22 +54,22 @@ func runConfigDoctor(cmd *cobra.Command, args []string) error {
 	u.Note("Effective values (file + environment overrides), as the service consumes them:")
 	u.EmptyLine()
 
-	grouped := manager.ListAllGrouped()
-	for _, group := range config.GroupOrder() {
-		items := grouped[group]
-		keys := make([]string, 0, len(items))
-		for key := range items {
-			keys = append(keys, key)
+	groups := orderedConfigGroups(manager)
+	keyWidth := 0
+	for _, group := range groups {
+		for _, key := range group.Keys {
+			keyWidth = max(keyWidth, len(key))
 		}
-		sort.Strings(keys)
-		u.Header("%s:", group)
-		for _, key := range keys {
-			item := items[key]
+	}
+	for _, group := range groups {
+		u.Header("%s:", group.Name)
+		for _, key := range group.Keys {
+			item := group.Items[key]
 			marker := " "
 			if !item.IsDefault {
 				marker = "*"
 			}
-			u.Printf(ui.Indent1+"%s %-28s %s\n", marker, key, item.Value)
+			u.Printf(ui.Indent1+"%s %-*s %s\n", marker, keyWidth, key, item.Value)
 		}
 		u.EmptyLine()
 	}
@@ -70,6 +83,20 @@ func runConfigDoctor(cmd *cobra.Command, args []string) error {
 		failed = true
 	} else {
 		u.Success("Validation: configuration is consistent")
+	}
+
+	// --config-only stops here: everything above reads the configuration, and
+	// everything below reaches for key material that a host being prepared may
+	// not hold yet. This is what `config validate` used to answer on its own.
+	if configOnly {
+		reportDashboardExposure(u, effective)
+		u.EmptyLine()
+		if failed {
+			return errors.New("configuration doctor found problems")
+		}
+		u.Success("Guardian configuration is consistent ✓")
+		u.EmptyLine()
+		return nil
 	}
 
 	if address, err := chain.ResolveKeyAddress(effective, effective.KeyName); err != nil {
