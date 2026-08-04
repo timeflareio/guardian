@@ -19,7 +19,6 @@ func TestEndToEndSecretFlow(t *testing.T) {
 	t.Skip("Test requires running blockchain for CLI transactions")
 	// Setup
 	cfg := mocks.CreateTestConfig()
-	cfg.EnableHMACValidation = false // Simplify for integration test
 	logger := mocks.CreateTestLogger()
 	mockChain := mocks.NewMockChain()
 	mockClient := mocks.NewMockClient(mockChain, logger)
@@ -107,7 +106,6 @@ func TestEndToEndSecretFlow(t *testing.T) {
 func TestMultipleSecretsParallel(t *testing.T) {
 	t.Skip("Test requires running blockchain for CLI transactions")
 	cfg := mocks.CreateTestConfig()
-	cfg.EnableHMACValidation = false
 	logger := mocks.CreateTestLogger()
 	mockChain := mocks.NewMockChain()
 	mockClient := mocks.NewMockClient(mockChain, logger)
@@ -179,7 +177,6 @@ func TestBlockProgression(t *testing.T) {
 
 	cfg := mocks.CreateTestConfig()
 	cfg.EncryptionPrivateKeyPath = privateKeyPath
-	cfg.EnableHMACValidation = false
 	logger := mocks.CreateTestLogger()
 	mockChain := mocks.NewMockChain()
 	mockClient := mocks.NewMockClient(mockChain, logger)
@@ -337,7 +334,6 @@ func TestServiceRestartRecovery(t *testing.T) {
 
 	cfg := mocks.CreateTestConfig()
 	cfg.EncryptionPrivateKeyPath = privateKeyPath
-	cfg.EnableHMACValidation = false
 	logger := mocks.CreateTestLogger()
 	mockChain := mocks.NewMockChain()
 	mockClient := mocks.NewMockClient(mockChain, logger)
@@ -494,7 +490,6 @@ func TestPerformanceUnderLoad(t *testing.T) {
 func TestConcurrentSecretProcessing(t *testing.T) {
 	t.Skip("Test requires running blockchain for CLI transactions")
 	cfg := mocks.CreateTestConfig()
-	cfg.EnableHMACValidation = false
 	logger := mocks.CreateTestLogger()
 	mockChain := mocks.NewMockChain()
 	mockClient := mocks.NewMockClient(mockChain, logger)

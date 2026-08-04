@@ -109,9 +109,8 @@ func TestConfigInitRefusesToOverwriteExistingConfig(t *testing.T) {
 	}
 }
 
-// --non-interactive is the explicit spelling of a mode that used to be inferred
-// from which flags happened to be named. It has to name everything it is short
-// of, not fail on the first one, and it must not prompt.
+// --non-interactive must name everything it is short of, not fail on the first
+// one, and it must never prompt.
 func TestConfigInitNonInteractiveNamesEverythingMissing(t *testing.T) {
 	g := newFixture(t)
 
@@ -132,8 +131,7 @@ func TestConfigInitNonInteractiveNamesEverythingMissing(t *testing.T) {
 }
 
 // init writes through the same validation as `config set`, so a key it accepts
-// is a key the rest of the tooling accepts. It used to bypass the value checks
-// and could leave a configuration that `config set` would have refused.
+// is a key the rest of the tooling accepts.
 func TestConfigInitRejectsAMalformedEncryptionKey(t *testing.T) {
 	g := newFixture(t)
 	g.mustRun("", "wallet", "create", "--name", "guardian-one")

@@ -244,7 +244,7 @@ function renderAssignments(d) {
       pending.map((a) => [
         a.secret_id,
         a.reveal_start_block,
-        a.planned_reveal_height || a.reveal_start_block,
+        a.reveal_start_block,
         a.reveal_end_block,
         blocks(a.blocks_to_window_open),
         blocks(a.blocks_to_window_close),

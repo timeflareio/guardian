@@ -297,12 +297,12 @@ func TestOnlyGETIsRouted(t *testing.T) {
 }
 
 // The page carries no credential, so what it may carry at all is the whole
-// defence. This pins the served field names of the two sections that used to
-// leak: a field added to either fails here until someone decides, deliberately,
-// that the chain already publishes it.
+// defence. This pins the served field names of the two sections richest in
+// host-local data: a field added to either fails here until someone decides,
+// deliberately, that the chain already publishes it.
 //
-// It is a contract test rather than a value test on purpose. The leak was never
-// a wrong value — it was a field nobody re-examined once it existed.
+// A contract test rather than a value test, because the risk is not a wrong
+// value — it is a field nobody re-examines once it exists.
 func TestServedFieldsStayWithinWhatTheChainPublishes(t *testing.T) {
 	for _, c := range []struct {
 		section string
@@ -352,8 +352,7 @@ func TestServedFieldsStayWithinWhatTheChainPublishes(t *testing.T) {
 	}
 }
 
-// Named individually because these are the ones that were actually served, and
-// a regression would reintroduce them by these names.
+// Named individually: these are the field names a regression would reintroduce.
 func TestHostLocalFieldsAreGone(t *testing.T) {
 	h := Handler(&stubSource{})
 	for _, path := range []string{"/api/vitals", "/api/keys", "/api/registration", "/api/activity"} {

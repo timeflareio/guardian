@@ -27,8 +27,8 @@ const handlerTimeout = 8 * time.Second
 // There is no authentication, and that is a constraint on what these endpoints
 // may carry rather than an omission — see the package comment. Every route here
 // must answer with what the chain already publishes about this guardian, plus
-// liveness. A route that would carry anything host-local needs the rule
-// revisited, not a credential added back.
+// liveness. A route that would carry anything host-local needs that rule
+// revisited first.
 //
 // Endpoints are versionless plain JSON by design (plan §2) — this serves one
 // embedded UI shipped in the same binary, so there is no second consumer to

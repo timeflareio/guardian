@@ -20,9 +20,8 @@ import (
 //
 // It runs in two halves. Each step *collects* a value — from a flag, or a
 // prompt — and returns it; nothing is written until every step has succeeded,
-// and then applyInitSettings writes the lot in one place. Interleaving the two
-// is what let the collection steps grow to four hundred lines, and it meant a
-// step that failed late left the earlier ones already applied to the manager.
+// and then applyInitSettings writes the lot in one place. A step that fails
+// therefore leaves nothing half-applied behind it.
 
 // NewConfigInitCmd creates the config init command
 func NewConfigInitCmd() *cobra.Command {
@@ -105,10 +104,9 @@ func readInitFlags(cmd *cobra.Command) initFlags {
 // interactive reports whether the wizard prompts.
 //
 // --non-interactive says so outright. Naming any of the identity flags means it
-// too, and always has: that inference predates the flag and scripts depend on
-// it, so it stays as a compatibility rule rather than the primary spelling. It
-// is also why --keyring-backend and --keyring-dir are absent from the list —
-// neither identifies a guardian on its own.
+// too, which is what scripts written before the flag rely on. --keyring-backend
+// and --keyring-dir are absent from that set deliberately: neither identifies a
+// guardian on its own.
 func (f initFlags) interactive() bool {
 	if f.nonInteractive {
 		return false
@@ -168,8 +166,7 @@ type initSettings struct {
 
 func runConfigInit(cmd *cobra.Command, args []string) error {
 	u := printer(cmd)
-	// Resolve the target path once, up front. This used to replace a
-	// package-level manager part-way through, leaving the process holding two
+	// Resolve the target path once, up front, so the process never holds two
 	// views of the configuration that could disagree.
 	manager := newManager(cmd)
 	configPath := manager.GetConfigPath()
@@ -420,8 +417,7 @@ func generateKeyInteractively(u *ui.Printer, manager *config.Manager) (string, e
 }
 
 // applyInitSettings writes everything the steps collected. This is the only
-// place init touches the configuration, so a step that fails leaves nothing
-// half-applied behind it.
+// place init touches the configuration.
 func applyInitSettings(manager *config.Manager, s initSettings) error {
 	values := map[string]string{
 		// The keyring key name doubles as the guardian's identifier.

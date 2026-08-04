@@ -97,9 +97,8 @@ func TestInvalidValueRejectedFromEveryLayer(t *testing.T) {
 	})
 }
 
-// version must not need a configuration file. It used to fail on a host without
-// one, because the initialiser loaded configuration for every command and
-// exited the process when that failed.
+// version must not need a configuration file: it answers on a host that has
+// never been configured.
 func TestVersionNeedsNoConfiguration(t *testing.T) {
 	g := newFixture(t)
 	out, err := g.run("", "version")

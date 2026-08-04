@@ -29,15 +29,14 @@
 // So: address, assignments, bonds, balances, key fingerprints, epochs and the
 // registration record — all of which anyone can already query — plus uptime,
 // heights and whether the daemon is running. No filesystem paths, no RPC or
-// gRPC endpoints, no local configuration dump, and above all nothing about key
-// custody posture. That last one was the sharpest: a page reporting whether the
-// share key was still stored in plaintext told an attacker which guardians were
-// worth attacking, which is a targeting signal no amount of authentication
-// makes safe to compute.
+// gRPC endpoints, no local configuration dump, and nothing about key custody
+// posture. That last one is the sharpest: whether the share key is encrypted at
+// rest names the guardians worth attacking, a targeting signal no amount of
+// authentication makes safe to compute.
 //
-// A field that breaks the rule does not get a password bolted back on — it gets
-// left out, or the rule gets revisited deliberately. Auth on an operator page
-// is one shared credential, which is not an access model so much as a delay.
+// A field that breaks the rule does not get a password put in front of it — it
+// gets left out, or the rule gets revisited deliberately. Auth on an operator
+// page is one shared credential, which is a delay rather than an access model.
 package dashboard
 
 import (
@@ -87,10 +86,9 @@ type Vitals struct {
 	GuardianAddress string `json:"guardian_address"`
 	ChainID         string `json:"chain_id"`
 	Version         string `json:"version"`
-	// The endpoints this daemon dials and the paths it reads are deliberately
-	// absent: they describe the operator's infrastructure, not the guardian's
-	// chain-visible state. An operator who wants them runs `guardianctl config
-	// doctor` on the host.
+	// The endpoints this daemon dials and the paths it reads belong to the
+	// operator's infrastructure rather than the guardian's chain-visible state,
+	// so they stay on the host: `guardianctl config doctor` reports them.
 	StartedAt       time.Time     `json:"started_at"`
 	Uptime          string        `json:"uptime"`
 	UptimeSeconds   int64         `json:"uptime_seconds"`
@@ -127,10 +125,6 @@ type Assignment struct {
 	BlocksToCommitDeadline int64 `json:"blocks_to_commit_deadline"`
 	BlocksToWindowOpen     int64 `json:"blocks_to_window_open"`
 	BlocksToWindowClose    int64 `json:"blocks_to_window_close"`
-	// PlannedRevealHeight is window-open plus the configured jitter offset,
-	// so an operator can see when this daemon actually intends to act rather
-	// than assuming it reveals at the open.
-	PlannedRevealHeight int64 `json:"planned_reveal_height,omitempty"`
 
 	BondUveil       int64  `json:"bond_uveil"`
 	RewardPoolUveil string `json:"reward_pool_uveil"`
@@ -213,11 +207,10 @@ type Keys struct {
 	LocalFingerprint      string `json:"local_fingerprint"`
 	Matches               bool   `json:"fingerprints_match"`
 	// Both fingerprints are of public keys the chain already carries, so a
-	// mismatch is safe to state. What is deliberately absent is anything about
-	// the private key: where it lives, and whether it is encrypted at rest. The
-	// second was a targeting signal — it named the guardians worth attacking —
-	// and `guardianctl config doctor` answers it on the host, where the operator
-	// asking is the operator who can act on it.
+	// mismatch is safe to state. Nothing about the private key belongs here —
+	// neither where it lives nor whether it is encrypted at rest, the second
+	// being a targeting signal. `guardianctl config doctor` answers both on the
+	// host, where whoever is asking can already read the key.
 
 	CurrentEpoch uint64     `json:"current_epoch"`
 	Epochs       []KeyEpoch `json:"epochs"`
@@ -232,11 +225,10 @@ type Keys struct {
 // RegistrationField is one setting the chain holds and the daemon can disagree
 // with, with its drift overlay (panel 15).
 //
-// Only settings with a genuine on-chain counterpart appear, which is also what
-// keeps this safe to serve: both sides of every comparison are already public.
-// The local-only settings this panel used to list — endpoints, key paths,
-// polling and reveal-offset timings — are gone. The timings mattered most:
-// reveal_offset_blocks says exactly when this daemon intends to act.
+// Only settings with a genuine on-chain counterpart appear, which is what keeps
+// this safe to serve: both sides of every comparison are already public.
+// Local-only settings — endpoints, key paths, polling timings — belong to
+// `guardianctl config`, not here.
 type RegistrationField struct {
 	Name  string `json:"name"`
 	Local string `json:"local"`
@@ -262,9 +254,9 @@ type Registration struct {
 	DriftCount         int    `json:"drift_count"`
 	// ConfigValid reports whether the local configuration passes validation.
 	// The complaint itself is not served: validation messages quote the values
-	// that failed, which is how a path or an endpoint would reach this page
-	// through the one field that promised not to carry them. `guardianctl
-	// config doctor --config-only` prints it on the host.
+	// that failed, which would carry a path or an endpoint onto a page that
+	// holds neither. `guardianctl config doctor --config-only` prints it on the
+	// host.
 	ConfigValid bool `json:"config_valid"`
 }
 
@@ -296,9 +288,8 @@ type ActivityDecision struct {
 
 // ActivitySubmission mirrors guardian.Submission.
 //
-// The failure text is deliberately not carried. A broadcast error quotes the
-// endpoint it could not reach, so serving it would leak the operator's
-// infrastructure through the one field nobody thinks to check. Success is
+// The failure text is not carried: a broadcast error quotes the endpoint it
+// could not reach, which would leak the operator's infrastructure. Success is
 // enough to see that something is wrong; the daemon log says what.
 type ActivitySubmission struct {
 	At       time.Time `json:"at"`

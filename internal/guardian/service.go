@@ -150,10 +150,10 @@ func (s *Service) VerifyRegistration(ctx context.Context) error {
 }
 
 // verifyShareKeyBinding is the startup self-check (key custody plan, Phase
-// 2): the local share key must derive the on-chain registered public key. A
-// wrong key used to surface only as decryption failures at confirmation
-// time; now the daemon refuses to run against it. A key that fails to LOAD
-// is not a mismatch — that stays a health signal (SetKeyLoadable) so an
+// 2): the local share key must derive the on-chain registered public key, and
+// the daemon refuses to run against one that does not — a wrong key otherwise
+// surfaces only as decryption failures at confirmation time. A key that fails
+// to LOAD is not a mismatch — that stays a health signal (SetKeyLoadable) so an
 // operator can attach the passphrase file without a crash loop.
 func (s *Service) verifyShareKeyBinding(guardian *chain.Guardian) error {
 	privateKey, err := s.config.GetEncryptionPrivateKey()
@@ -432,8 +432,8 @@ func (s *Service) runSecretMonitoring(ctx context.Context) {
 }
 
 // processSecrets runs one full cycle: refresh height, resync the cache, act
-// on confirmations and reveals. A failed height query no longer skips the
-// whole tick — the last known height keeps confirmations and reveals moving.
+// on confirmations and reveals. A failed height query does not skip the whole
+// tick: the last known height keeps confirmations and reveals moving.
 func (s *Service) processSecrets(ctx context.Context) error {
 	started := time.Now()
 

@@ -43,8 +43,7 @@ func NewConfigCmd() *cobra.Command {
 
 Configuration is stored in ~/.timeflare/guardian/config.yaml by default.
 Use --config-path to specify a different location.`,
-		// Without this a mistyped or retired subcommand — `config validate`,
-		// which this command used to have — is swallowed as an argument and
+		// Without this a mistyped subcommand is swallowed as an argument and
 		// answered with the help text and exit zero, which in a script is
 		// indistinguishable from having run.
 		Args: cobra.NoArgs,
@@ -217,11 +216,10 @@ func runConfigList(cmd *cobra.Command, args []string) error {
 	u.Text("Config file: ")
 	u.Path("%s\n\n", manager.GetConfigPath())
 
-	// Column widths come from the data rather than from guessed constants. The
-	// guesses were 25 for the key and column 90 for the description, and a key
-	// longer than 25 (encryption_private_key_path is 27) shifted its whole row
-	// out of alignment. Padding inside the coloured write also removes the need
-	// to measure a string with escape codes in it.
+	// Column widths come from the data rather than from guessed constants, so a
+	// key longer than expected cannot shift its row out of alignment. Padding
+	// inside the coloured write is what avoids measuring a string with escape
+	// codes in it.
 	keyWidth, valueWidth := 0, 0
 	for _, group := range groups {
 		for _, key := range group.Keys {
@@ -263,8 +261,7 @@ type configGroup struct {
 // orderedConfigGroups walks the configuration in the registry's own group order
 // with each group's keys sorted. Both `config list` and `config doctor` render
 // from this, so a group or field added to the registry reaches both without
-// either being touched — and neither can carry a stale copy of the group names,
-// which is how `config list` once came to print nothing at all.
+// either being touched, and neither can carry a stale copy of the group names.
 func orderedConfigGroups(manager *config.Manager) []configGroup {
 	grouped := manager.ListAllGrouped()
 	groups := make([]configGroup, 0, len(grouped))

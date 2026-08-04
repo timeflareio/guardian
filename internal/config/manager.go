@@ -176,8 +176,8 @@ func (m *Manager) GetConfigDirectory() string {
 //
 // The limit is worth stating: a value set by hand to exactly the default reads
 // as unchosen. That only matters for a guardian whose configuration lives
-// outside the default directory, where an explicitly-default key path is
-// resolved beside the configuration instead.
+// outside the default directory, where such a key path resolves beside the
+// configuration instead.
 func chosen(value, defaultValue string) bool {
 	return value != "" && value != defaultValue
 }

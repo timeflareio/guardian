@@ -79,7 +79,6 @@ type Config struct {
 	PollingInterval      time.Duration `config:"polling_interval" group:"Service" desc:"Fallback poll rate (primary discovery is event-driven when enabled)"`
 	MaxConcurrentSecrets int           `config:"max_concurrent_secrets" group:"Service" desc:"Maximum number of concurrent secret assignments"`
 	MaxParallelReveals   int           `config:"max_parallel_reveals" group:"Service" desc:"Bounded parallelism for reveal submissions in one pass"`
-	EnableHMACValidation bool          `config:"enable_hmac_validation" group:"Service" desc:"Enable HMAC validation for secret shares"`
 	CacheMaxAge          time.Duration `config:"cache_max_age" group:"Service" desc:"Maximum age before a cached secret is evicted"`
 	CacheCleanupInterval int64         `config:"cache_cleanup_interval" group:"Service" desc:"How often (in blocks) the secret cache runs cleanup"`
 	ShutdownTimeout      time.Duration `config:"shutdown_timeout" group:"Service" desc:"Grace period for clean shutdown of all services"`
@@ -87,7 +86,6 @@ type Config struct {
 	// Event-driven operation
 	EnableEventMonitoring bool          `config:"enable_event_monitoring" group:"Event Monitoring" desc:"React to chain events over WebSocket (polling remains the fallback)"`
 	EventReconnectBackoff time.Duration `config:"event_reconnect_backoff" group:"Event Monitoring" desc:"Backoff before reconnecting a dropped event subscription"`
-	RevealOffsetBlocks    int64         `config:"reveal_offset_blocks" group:"Event Monitoring" desc:"Max random block offset after window-open before revealing (0 = reveal immediately)"`
 
 	// Monitoring & observability
 	BindAddress   string `config:"bind_address" group:"Monitoring" desc:"Bind address for the metrics and health listeners"`
@@ -102,11 +100,11 @@ type Config struct {
 	// chain already publishes about this guardian — address, assignments, bonds,
 	// key fingerprints, epochs — plus liveness. Nothing host-local reaches it:
 	// no filesystem paths, no endpoints, no key custody posture. That last one
-	// mattered most; a page that said whether the share key was still stored in
-	// plaintext told an attacker which guardians were worth attacking.
+	// matters most, since whether the share key is encrypted at rest names the
+	// guardians worth attacking.
 	//
 	// Anything added here that a chain query could not already answer needs that
-	// rule revisited first, not a credential bolted back on.
+	// rule revisited first, not a credential put in front of it.
 	EnableDashboard   bool   `config:"enable_dashboard" group:"Monitoring" desc:"Serve the read-only operator dashboard"`
 	DashboardPort     int    `config:"dashboard_port" group:"Monitoring" desc:"Operator dashboard port"`
 	EnableHealthCheck bool   `config:"enable_health_check" group:"Monitoring" desc:"Serve the health/readiness endpoints"`
@@ -163,14 +161,12 @@ func DefaultConfig() *Config {
 		PollingInterval:      6 * time.Second,
 		MaxConcurrentSecrets: 100,
 		MaxParallelReveals:   4,
-		EnableHMACValidation: true,
 		CacheMaxAge:          7 * 24 * time.Hour,
 		CacheCleanupInterval: 50,
 		ShutdownTimeout:      30 * time.Second,
 
 		EnableEventMonitoring: true,
 		EventReconnectBackoff: 5 * time.Second,
-		RevealOffsetBlocks:    0,
 
 		BindAddress: "0.0.0.0",
 		// 21000/21100 rather than the conventional 8080/9100: 9100 is
@@ -286,9 +282,6 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.RetryAttempts <= 0 {
 		return fmt.Errorf("retry_attempts must be positive")
-	}
-	if cfg.RevealOffsetBlocks < 0 {
-		return fmt.Errorf("reveal_offset_blocks cannot be negative")
 	}
 
 	return nil

@@ -49,8 +49,8 @@ func (s *Service) Vitals(ctx context.Context) dashboard.Vitals {
 	version := s.version
 	s.mu.RUnlock()
 
-	// configPath, RPCEndpoint and GRPCEndpoint are read but not published: they
-	// describe the operator's host and network, which this page does not carry.
+	// The config path and the chain endpoints stay off this page: they describe
+	// the operator's host and network rather than the guardian.
 	v := dashboard.Vitals{
 		GuardianAddress: s.config.GuardianAddress,
 		ChainID:         s.config.ChainID,
@@ -178,12 +178,6 @@ func (s *Service) toDashboardAssignment(a AssignmentSnapshot, height int64) dash
 		}
 		out.BlocksToWindowOpen = a.RevealStartBlock - height
 		out.BlocksToWindowClose = a.RevealEndBlock - height
-	}
-	// The daemon reveals at a random offset after window-open when configured,
-	// so the planned height is what it will actually do — showing only the
-	// window open would misrepresent its own intent.
-	if s.config.RevealOffsetBlocks > 0 && a.RevealStartBlock > 0 {
-		out.PlannedRevealHeight = a.RevealStartBlock + s.config.RevealOffsetBlocks
 	}
 	out.RewardFloorUveil = rewardFloor(a.RewardPoolUveil, a.MaxShares)
 	out.AtRisk, out.Urgency, out.RiskNote = revealRisk(a, height)
@@ -326,10 +320,10 @@ func revealsToFloor(k int64) int {
 // Keys implements dashboard.Source.
 func (s *Service) Keys(ctx context.Context) dashboard.Keys {
 	// Fingerprints and epochs only. The key's location and its at-rest status
-	// are not computed here at all, rather than computed and withheld: the
-	// at-rest answer names the guardians worth attacking, and this page has no
-	// credential in front of it. `guardianctl config doctor` reports both on the
-	// host, to whoever can already read the key.
+	// are never computed here: the at-rest answer names the guardians worth
+	// attacking, and this page has no credential in front of it. `guardianctl
+	// config doctor` reports both on the host, to whoever can already read the
+	// key.
 	out := dashboard.Keys{
 		Address: s.config.GuardianAddress,
 	}
@@ -424,12 +418,8 @@ func fingerprint(key []byte) string {
 
 // Registration implements dashboard.Source.
 //
-// Only settings the chain also holds are presented. The local-only ones this
-// used to list — rpc_endpoint, grpc_endpoint, encryption_private_key_path,
-// polling_interval, reveal_offset_blocks, enable_event_monitoring — are gone
-// because this page carries nothing host-local. reveal_offset_blocks was the
-// worst of them: it publishes exactly how long after window-open this daemon
-// waits before revealing.
+// Only settings the chain also holds are presented, because this page carries
+// nothing host-local.
 func (s *Service) Registration(ctx context.Context) dashboard.Registration {
 	// Whether the configuration validates is safe to state; why it does not is
 	// not, because the complaint quotes the offending value.

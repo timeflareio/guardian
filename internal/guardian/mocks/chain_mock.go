@@ -378,7 +378,7 @@ func (m *MockClient) GuardianConfirmShares(ctx context.Context, secretID string,
 	})
 
 	// Simulate state change in mock chain
-	// Since we no longer have share indices, this would be handled differently in the actual implementation
+	// Share indices are embedded in the share data rather than passed alongside it.
 	// For mock purposes, we'll just update the first assignment or all assignments based on the caller's context
 	if secret, exists := m.chain.GetSecret(secretID); exists {
 		if len(secret.GuardianAssignments) > 0 {

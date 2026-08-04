@@ -159,8 +159,8 @@ func TestServiceStart_Success(t *testing.T) {
 	assert.True(t, registered)
 	assert.Equal(t, cfg.GuardianAddress, service.config.GuardianAddress)
 
-	// The write lock must NOT be held while the service runs — GetStatus on a
-	// running instance used to deadlock (§6.6 of the improvements plan).
+	// The write lock must NOT be held while the service runs, or GetStatus on a
+	// running instance deadlocks.
 	statusCtx, statusCancel := context.WithTimeout(context.Background(), time.Second)
 	defer statusCancel()
 	_, err := service.GetStatus(statusCtx, false)

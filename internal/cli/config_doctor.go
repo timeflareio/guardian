@@ -88,7 +88,7 @@ func runConfigDoctor(cmd *cobra.Command, configOnly bool) error {
 
 	// --config-only stops here: everything above reads the configuration, and
 	// everything below reaches for key material that a host being prepared may
-	// not hold yet. This is what `config validate` used to answer on its own.
+	// not hold yet.
 	if configOnly {
 		reportDashboard(u, effective)
 		u.EmptyLine()

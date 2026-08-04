@@ -273,10 +273,9 @@ func TestListAllGroupedMarksDefaults(t *testing.T) {
 	assert.True(t, groups["Monitoring"]["log_format"].IsDefault)
 }
 
-// Where the key files land is decided by two rules that used to be spelled out
-// separately in each getter. A guardian pointed at its own --config-path has to
-// keep its keys beside that configuration, and an operator who names a keyring
-// directory has to win over that.
+// Where the key files land is decided by two rules. A guardian pointed at its
+// own --config-path keeps its keys beside that configuration, and an operator
+// who names a keyring directory outranks it.
 func TestKeyPathsFollowTheConfigurationsOwnDirectory(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(filepath.Join(dir, "config.yaml"))

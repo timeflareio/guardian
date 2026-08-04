@@ -11,10 +11,9 @@ import (
 )
 
 // The listing renders whatever the registry declares, so a group the registry
-// knows about has to reach the output. A second hardcoded copy of these names
-// drifted from the registry's, and because an unrecognised group is skipped
-// rather than reported, `config list` printed its header and its footer with
-// every value missing in between.
+// knows about has to reach the output. An unrecognised group is skipped rather
+// than reported, so a listing that silently loses every value still looks like
+// a successful run.
 func TestConfigListShowsEveryRegistryGroup(t *testing.T) {
 	g := newFixture(t)
 	g.initialised("guardian-one")

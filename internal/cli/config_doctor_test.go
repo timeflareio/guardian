@@ -64,9 +64,9 @@ func TestConfigDoctorFailsOnUnloadableKey(t *testing.T) {
 	}
 }
 
-// --config-only is what `config validate` used to answer: is the configuration
-// itself consistent, on a host whose key material may not be in place yet. It
-// has to pass exactly where the full report fails for want of a key.
+// --config-only answers whether the configuration itself is consistent, on a
+// host whose key material may not be in place yet. It has to pass exactly where
+// the full report fails for want of a key.
 func TestConfigDoctorConfigOnlySkipsTheKeyChecks(t *testing.T) {
 	g := newFixture(t)
 	g.initialised("guardian-one")

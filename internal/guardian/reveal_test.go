@@ -198,7 +198,6 @@ func TestProcessConfirmation_HMACValidation(t *testing.T) {
 
 	cfg := mocks.CreateTestConfig()
 	cfg.EncryptionPrivateKeyPath = testKeypair.PrivateKeyPath
-	cfg.EnableHMACValidation = true
 	logger := mocks.CreateTestLogger()
 	mockChain := mocks.NewMockChain()
 	mockClient := mocks.NewMockClient(mockChain, logger)
@@ -224,45 +223,37 @@ func TestProcessConfirmation_HMACValidation(t *testing.T) {
 	// In this case, will likely reject due to HMAC mismatch
 }
 
-func TestProcessConfirmation_HMACValidationDisabled(t *testing.T) {
-	// Setup crypto files
+func TestProcessConfirmation_RejectsAnInvalidHMAC(t *testing.T) {
+	// A share whose HMAC does not verify is rejected, always. The chain checks
+	// the same HMAC when it accepts the reveal, so accepting here would commit a
+	// bond to a share that is slashable on submission.
 	testKeypair, cleanup := setupTestCrypto(t)
 	defer cleanup()
 
 	cfg := mocks.CreateTestConfig()
 	cfg.EncryptionPrivateKeyPath = testKeypair.PrivateKeyPath
-	cfg.EnableHMACValidation = false // Disable HMAC validation
 	logger := mocks.CreateTestLogger()
 	mockChain := mocks.NewMockChain()
 	mockClient := mocks.NewMockClient(mockChain, logger)
 
 	service := NewShareRevealService(cfg, mockClient, logger)
 
-	// Create test secret and assignment with properly encrypted share
 	secretID := mocks.GenerateTestSecretID()
 	secret := mocks.CreateTestSecret(secretID, 3, "awaiting_acceptance")
 	assignment := mocks.CreateTestAssignment(mocks.TestGuardianAddress, "ASSIGNMENT_STATUS_PROPOSED")
 
-	// Create properly encrypted share using the test keypair
 	testShareData := []byte("test share data")
 	encryptedShare, err := mocks.CreateProperlyEncryptedShareForTesting(testShareData, testKeypair.PublicKey)
 	require.NoError(t, err)
 	assignment.EncryptedShare = encryptedShare
+	assignment.ShareHMAC = []byte("invalid_hmac")
 
-	// Use an invalid HMAC that would normally cause rejection (but should be ignored)
-	assignment.ShareHMAC = []byte("invalid_hmac_should_be_ignored")
-
-	ctx := context.Background()
-
-	// Test
-	err = service.ProcessConfirmation(ctx, secret, &assignment, testConfirmHeight)
-
-	// Should accept since HMAC validation is disabled
+	err = service.ProcessConfirmation(context.Background(), secret, &assignment, testConfirmHeight)
 	require.NoError(t, err)
 
 	confirmCalls := mockClient.GetGuardianConfirmSharesCalls()
 	require.Len(t, confirmCalls, 1)
-	assert.True(t, confirmCalls[0].Accept)
+	assert.False(t, confirmCalls[0].Accept, "a share with a bad HMAC must be rejected, not accepted")
 }
 
 func TestProcessReveal_Success(t *testing.T) {
