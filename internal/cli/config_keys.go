@@ -174,7 +174,7 @@ func runConfigMigrateKey(cmd *cobra.Command, args []string) error {
 		u.Note("Passphrase stored at %s (0600) so the daemon can decrypt unattended", custody.SiblingPassphrasePath(keyPath))
 	}
 	if flagPassphraseFile != "" {
-		if err := manager.SetWithoutValidation("encryption_key_passphrase", flagPassphraseFile); err != nil {
+		if err := manager.Set("encryption_key_passphrase", flagPassphraseFile); err != nil {
 			return errors.Wrap(err, "failed to set encryption_key_passphrase")
 		}
 		if err := manager.Save(); err != nil {
@@ -365,5 +365,5 @@ func writeEncryptionKeyPassphraseFile(manager *config.Manager, passphrase string
 	if err := custody.WritePassphraseFile(sibling, passphrase); err != nil {
 		return err
 	}
-	return manager.SetWithoutValidation("encryption_key_passphrase", sibling)
+	return manager.Set("encryption_key_passphrase", sibling)
 }

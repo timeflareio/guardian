@@ -363,7 +363,7 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 		if err := custody.WritePassphraseFile(custody.SiblingPassphrasePath(keyPath), atRestPassphrase); err != nil {
 			return err
 		}
-		if err := manager.SetWithoutValidation("encryption_key_passphrase", custody.SiblingPassphrasePath(keyPath)); err != nil {
+		if err := manager.Set("encryption_key_passphrase", custody.SiblingPassphrasePath(keyPath)); err != nil {
 			return err
 		}
 	}
@@ -390,12 +390,12 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 			u.Success("Restored %d keyring file(s) into %s", len(bundle.KeyringFiles), effective.KeyringDir)
 		}
 		if bundle.KeyName != "" {
-			if err := manager.SetWithoutValidation("key_name", bundle.KeyName); err != nil {
+			if err := manager.Set("key_name", bundle.KeyName); err != nil {
 				return err
 			}
 		}
 		if bundle.GuardianAddress != "" {
-			if err := manager.SetWithoutValidation("guardian_address", bundle.GuardianAddress); err != nil {
+			if err := manager.Set("guardian_address", bundle.GuardianAddress); err != nil {
 				return err
 			}
 		}
@@ -409,7 +409,7 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := manager.SetWithoutValidation("encryption_public_key", derivedHex); err != nil {
+	if err := manager.Set("encryption_public_key", derivedHex); err != nil {
 		return err
 	}
 	if err := manager.Save(); err != nil {

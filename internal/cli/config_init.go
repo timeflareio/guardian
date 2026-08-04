@@ -359,28 +359,28 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 
 	// Set the user-provided values using the config manager
 	if encryptionKey != "" {
-		if err := manager.SetWithoutValidation("encryption_public_key", encryptionKey); err != nil {
+		if err := manager.Set("encryption_public_key", encryptionKey); err != nil {
 			return errors.Wrap(err, "failed to set encryption key")
 		}
 		// Set the private key path using config-derived path
 		privateKeyPath := manager.GetPrivateKeyPath()
-		if err := manager.SetWithoutValidation("encryption_private_key_path", privateKeyPath); err != nil {
+		if err := manager.Set("encryption_private_key_path", privateKeyPath); err != nil {
 			return errors.Wrap(err, "failed to set encryption private key path")
 		}
 	}
-	if err := manager.SetWithoutValidation("guardian_id", guardianID); err != nil {
+	if err := manager.Set("guardian_id", guardianID); err != nil {
 		return errors.Wrap(err, "failed to set guardian ID")
 	}
-	if err := manager.SetWithoutValidation("key_name", keyName); err != nil {
+	if err := manager.Set("key_name", keyName); err != nil {
 		return errors.Wrap(err, "failed to set key name")
 	}
-	if err := manager.SetWithoutValidation("keyring_backend", keyringBackend); err != nil {
+	if err := manager.Set("keyring_backend", keyringBackend); err != nil {
 		return errors.Wrap(err, "failed to set keyring backend")
 	}
 
 	// Set keyring directory if provided (optional flag)
 	if flagKeyringDir != "" {
-		if err := manager.SetWithoutValidation("keyring_dir", flagKeyringDir); err != nil {
+		if err := manager.Set("keyring_dir", flagKeyringDir); err != nil {
 			return errors.Wrap(err, "failed to set keyring directory")
 		}
 	}
@@ -388,14 +388,14 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 	// Only the hash reaches the file; the plaintext is gone by this point unless
 	// it was generated, in which case it is printed once in the summary below.
 	if dashboardHash != "" {
-		if err := manager.SetWithoutValidation("dashboard_password_hash", dashboardHash); err != nil {
+		if err := manager.Set("dashboard_password_hash", dashboardHash); err != nil {
 			return errors.Wrap(err, "failed to set dashboard password hash")
 		}
 	}
 
 	// Set the guardian address if we resolved it earlier
 	if guardianAddress != "" {
-		if err := manager.SetWithoutValidation("guardian_address", guardianAddress); err != nil {
+		if err := manager.Set("guardian_address", guardianAddress); err != nil {
 			return errors.Wrap(err, "failed to set guardian address")
 		}
 	}
@@ -414,7 +414,7 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 			return errors.Wrap(err, "failed to create passphrase file")
 		}
 		// Set the passphrase file path in config
-		if err := manager.SetWithoutValidation("keyring_passphrase", passphraseFile); err != nil {
+		if err := manager.Set("keyring_passphrase", passphraseFile); err != nil {
 			return errors.Wrap(err, "failed to set keyring passphrase file")
 		}
 	}

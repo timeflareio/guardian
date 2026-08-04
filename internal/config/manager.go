@@ -152,16 +152,6 @@ func (m *Manager) Set(key, value string) error {
 	return m.config.SetField(key, value)
 }
 
-// SetWithoutValidation is retained for the init flow; the registry's parse
-// step always applies (types must hold), only value-level checks are relaxed.
-func (m *Manager) SetWithoutValidation(key, value string) error {
-	spec := findFieldSpec(key)
-	if spec == nil {
-		return fmt.Errorf("unknown configuration key: %s", key)
-	}
-	return spec.set(m.config, value)
-}
-
 // GetConfig returns the current configuration
 func (m *Manager) GetConfig() *Config {
 	// Return a shallow copy to prevent external modification of the manager's

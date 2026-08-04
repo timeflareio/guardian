@@ -151,6 +151,29 @@ func TestConfigInitGeneratesADashboardPassword(t *testing.T) {
 	}
 }
 
+// init writes through the same validation as `config set`, so a key it accepts
+// is a key the rest of the tooling accepts. It used to bypass the value checks
+// and could leave a configuration that `config set` would have refused.
+func TestConfigInitRejectsAMalformedEncryptionKey(t *testing.T) {
+	g := newFixture(t)
+	g.mustRun("", "wallet", "create", "--name", "guardian-one")
+
+	out, err := g.run("",
+		"config", "init",
+		"--key-name", "guardian-one",
+		"--keyring-backend", "test",
+		"--keyring-dir", g.dir,
+		"--keyring-passphrase", "keyring-pass",
+		"--encryption-public-key", "abc123",
+	)
+	if err == nil {
+		t.Fatalf("init accepted a 6-character encryption public key:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "64 hex characters") {
+		t.Errorf("init did not explain the key length: %v", err)
+	}
+}
+
 // The password is never a flag value, so the two ways of supplying one cannot
 // both be meant at once.
 func TestConfigInitRefusesBothDashboardPasswordSwitches(t *testing.T) {
