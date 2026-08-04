@@ -17,9 +17,8 @@ owner, 4 August 2026.
 `internal/config/config_test.go`, a new `internal/config/networks_test.go`,
 `docs/guides/` operator setup text, `CLAUDE.md`,
 [PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md);
-and in the chain repository, `networks.json`,
-`make/scripts/verify-networks.sh`, `docs/guides/NETWORKS.md`,
-`devnet/guardians.sh` and `devnet/docker/init-guardians.sh`.
+and in the chain repository, `devnet/guardians.sh` and
+`devnet/docker/init-guardians.sh`.
 
 ---
 
@@ -57,18 +56,18 @@ for the one class of mistake that costs bond.
 
 `chain/networks.json` is the chain's own definition of the networks it runs as,
 documented in `chain/docs/guides/NETWORKS.md`. Each entry carries `id`, `label`,
-`chainId`, `local`, `tls` and `endpoints` (`rpc`, `rest`, `grpc` — each a list),
-with a top-level `default` naming the entry a consumer picks when the operator has
-not, and an `addressPrefix`. The chain gates it with `make verify-networks`, which
-pins `addressPrefix` to `app.go` and the devnet `chainId` to the devnet scripts.
+`chainId`, `local` and `endpoints` (`rpc`, `rest`, `grpc` — each a list), with a
+top-level `default` naming the entry a consumer picks when the operator has not,
+and an `addressPrefix`. The chain gates it with `make verify-networks`, which pins
+`addressPrefix` to `app.go` and the devnet `chainId` to the devnet scripts.
 
-`tls` states whether the network's endpoints are TLS-terminated, and the chain
-owner adds it for this plan (ruled by the owner, 4 August 2026). It is not a
-restatement of `local`: the two answer different questions, and a private node
-reached over a VPN is legitimately `local: false, tls: false`. Without it a
-consumer has to infer transport from the absence of a loopback host, which is
-guesswork for `grpc` in particular — `rpc` and `rest` carry a scheme in their URLs
-and `grpc` is a bare `host:port` that cannot express one.
+**`local` is the transport statement as well as the locality one** (ruled by the
+owner, 4 August 2026). `NETWORKS.md` permits cleartext for a loopback-scoped
+network and nowhere else, and `verify-networks` enforces exactly that: a `local`
+entry's `rpc` and `rest` must be loopback, a non-local entry's must be `https`. So
+"is this network loopback-scoped" and "may this connection be in clear" are one
+question with one answer, and a second field stating it separately could only ever
+restate it or contradict it.
 
 It is deployment fact rather than protocol: `chain/docs/spec.md` remains the
 authority for what the protocol does, and a change to the registry never needs a
@@ -151,9 +150,9 @@ entry that exists, `networks` is non-empty, and every entry carries `id`,
 carrying a field this build does not understand is a newer chain talking to an
 older `guardianctl`, which is the normal case over time and not an error.
 
-`tls` is read but not required, because a registry predating it is the same case
-in reverse — see "Reaching a network that is not loopback" for what a missing
-value falls back to.
+`local` is required and must be a boolean, because the transport decision derives
+from it — see "Reaching a network that is not loopback". An entry that omits it is
+not usable, which is why it sits with the required fields rather than defaulting.
 
 `endpoints.rest` is parsed but unused: the guardian speaks native gRPC and
 CometBFT RPC, and has no REST client. It is read so the type mirrors the
@@ -268,19 +267,22 @@ behind. Its design is adopted unchanged rather than restated; the reason it land
 here is that network selection is what populates it, and selection producing a
 configuration the daemon cannot dial is not worth shipping.
 
-**Selection sets `grpc_tls` from the entry's `tls` field**, which is why that field
-is being added: it states the transport as fact rather than leaving the daemon to
-infer it. A network that declares `tls: false` — the devnet, or a private node over
-a VPN — gets plaintext, which is the safe bypass; anything declaring `tls: true`
-gets TLS against the system root pool. The operator therefore never has to know
-the key exists, and the explicit boolean that plan wants — rather than a scheme
-parsed out of the endpoint, its open question 3 — is exactly what a selection step
-can fill in.
+**Selection sets `grpc_tls` from `!local`.** A loopback-scoped network gets
+plaintext — the devnet, and the only place the registry permits cleartext at all;
+anything else gets TLS against the system root pool. The operator therefore never
+has to know the key exists, and the explicit boolean that plan wants — rather than
+a scheme parsed out of the endpoint, its open question 3 — is what a selection step
+fills in.
 
-An entry with no `tls` field falls back to `!local`. That keeps this plan
-independent of when the chain lands the field, and it is the same tolerance the
-validation rule states in the other direction: a registry older than the build
-reading it is as ordinary as a newer one.
+The derivation is sound because `local` is not merely correlated with transport:
+`verify-networks` requires a `local` entry's URLs to be loopback and a non-local
+entry's to be `https`, so the registry cannot publish a network where the two
+diverge. Reading `local` here is reading the rule, not guessing from it.
+
+The inference is confined to selection. A configuration nobody selected into keeps
+the plaintext default, and `grpc_tls` remains an ordinary key an operator can set
+either way — a private node on a LAN serving plaintext gRPC stays reachable through
+the custom path.
 
 The default stays plaintext for a configuration nobody selected into, so every
 colocated deployment and the devnet are untouched. That answers that plan's open
@@ -388,13 +390,13 @@ runs at a materially different rate.
    the `--network` flag in `initFlags`/`readInitFlags`, the unselectable-network
    presentation, the custom fallback, and the renumbering of Steps 2–5.
    `initSettings` and `applyInitSettings` gain the five fields, with `grpc_tls`
-   from the entry's `tls` (falling back to `!local`) and `network` from its `id`.
+   from `!local` and `network` from the entry's `id`.
 5. **The `network` key and its drift check** — the field on `Config` in the
    Network group, and the `config doctor` comparison of `chain_id` and both
    endpoints against the named entry, reporting `custom` and unknown ids as not
    checked.
 6. **`internal/cli/config_init_test.go`** — selection writes all five fields;
-   `tls: true` sets `grpc_tls` and an entry with no `tls` falls back to `!local`;
+   a `local: false` entry sets `grpc_tls` and a `local: true` entry leaves it off;
    `--network` with an unknown id fails naming the available ids; a failed fetch
    completes interactively with the defaults intact and fails unattended;
    `--non-interactive` with no `--network` lands on the list's `default`. Doctor's
@@ -403,21 +405,12 @@ runs at a materially different rate.
    the gas floor expression factored out of `internal/chain/signer.go:68-69` so
    both callers read one definition — and `internal/cli/register.go:56` reads
    `EntryFeeAmount` rather than stating 1,000 VEIL in prose.
-8. **The chain repository** — three separate changes there, none of which this
-   plan's phases depend on:
-   - `networks.json` and `verify-networks.sh` gain the `tls` field, and
-     `docs/guides/NETWORKS.md` documents it alongside `local`, stating why both
-     exist.
-   - `NETWORKS.md`'s "Consuming it" section is rewritten. It currently says no
-     consumer reads the registry and that nothing outside the chain should copy
-     it; consuming it is the file's entire purpose (ruled by the owner, 4 August
-     2026), and `mobile-client` already does
-     (`app/src/state/settings.ts:106`). It should describe the two patterns now in
-     use — a client reading it live, and a daemon reading it once at setup.
-   - `devnet/guardians.sh` and `devnet/docker/init-guardians.sh` set
-     `GUARDIAN_NETWORK_LIST_URL` to the chain checkout's own `networks.json`, so
-     `dev-up` and the e2e suites exercise selection without reaching GitHub. This
-     one lands after the guardian release that understands the variable.
+8. **The chain's devnet scripts** — `devnet/guardians.sh` and
+   `devnet/docker/init-guardians.sh` set `GUARDIAN_NETWORK_LIST_URL` to the chain
+   checkout's own `networks.json`, so `dev-up` and the e2e suites exercise
+   selection without reaching GitHub. A change in the chain repository, landing
+   after the guardian release that understands the variable, and the only
+   chain-side work this plan still implies.
 9. **Docs and the transport plan** — the operator setup guide gains the selection
    step; `CLAUDE.md` gains a line stating that the network registry is read at
    `config init` only and that the daemon's source of truth remains its
