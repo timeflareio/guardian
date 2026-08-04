@@ -4,19 +4,22 @@
 every guardian comes out of setup pointed at the local devnet under the devnet's
 chain id. Pre-testnet: the first public network is the moment this becomes an
 operator-facing defect rather than a latent one.
-**Status**: refining (4 August 2026)
+**Status**: ready (4 August 2026)
 **Origin**: [PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md](PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md)
 finding 22 and its `chain_id` docs item; the chain's network registry
 (`chain/networks.json`, `chain/docs/guides/NETWORKS.md`); scope ruled by the
 owner, 4 August 2026.
 **Components**: `internal/config/networks.go` (new file, existing package),
 `internal/config/config.go`, `internal/cli/config_init.go`,
-`internal/chain/client.go`, `internal/cli/key.go`,
-`internal/cli/config_init_test.go`, `internal/config/config_test.go`, a new
-`internal/config/networks_test.go`, `docs/guides/` operator setup text,
-`CLAUDE.md`, [PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md);
-and in the chain repository, `devnet/guardians.sh` and
-`devnet/docker/init-guardians.sh`.
+`internal/cli/config_doctor.go`, `internal/chain/client.go`,
+`internal/cli/key.go`, `internal/cli/register.go`, `internal/chain/signer.go`,
+`internal/cli/config_init_test.go`, `internal/cli/config_doctor_test.go`,
+`internal/config/config_test.go`, a new `internal/config/networks_test.go`,
+`docs/guides/` operator setup text, `CLAUDE.md`,
+[PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md);
+and in the chain repository, `networks.json`,
+`make/scripts/verify-networks.sh`, `docs/guides/NETWORKS.md`,
+`devnet/guardians.sh` and `devnet/docker/init-guardians.sh`.
 
 ---
 
@@ -54,10 +57,18 @@ for the one class of mistake that costs bond.
 
 `chain/networks.json` is the chain's own definition of the networks it runs as,
 documented in `chain/docs/guides/NETWORKS.md`. Each entry carries `id`, `label`,
-`chainId`, `local` and `endpoints` (`rpc`, `rest`, `grpc` — each a list), with a
-top-level `default` naming the entry a consumer picks when the operator has not,
-and an `addressPrefix`. The chain gates it with `make verify-networks`, which
+`chainId`, `local`, `tls` and `endpoints` (`rpc`, `rest`, `grpc` — each a list),
+with a top-level `default` naming the entry a consumer picks when the operator has
+not, and an `addressPrefix`. The chain gates it with `make verify-networks`, which
 pins `addressPrefix` to `app.go` and the devnet `chainId` to the devnet scripts.
+
+`tls` states whether the network's endpoints are TLS-terminated, and the chain
+owner adds it for this plan (ruled by the owner, 4 August 2026). It is not a
+restatement of `local`: the two answer different questions, and a private node
+reached over a VPN is legitimately `local: false, tls: false`. Without it a
+consumer has to infer transport from the absence of a loopback host, which is
+guesswork for `grpc` in particular — `rpc` and `rest` carry a scheme in their URLs
+and `grpc` is a bare `host:port` that cannot express one.
 
 It is deployment fact rather than protocol: `chain/docs/spec.md` remains the
 authority for what the protocol does, and a change to the registry never needs a
@@ -140,6 +151,10 @@ entry that exists, `networks` is non-empty, and every entry carries `id`,
 carrying a field this build does not understand is a newer chain talking to an
 older `guardianctl`, which is the normal case over time and not an error.
 
+`tls` is read but not required, because a registry predating it is the same case
+in reverse — see "Reaching a network that is not loopback" for what a missing
+value falls back to.
+
 `endpoints.rest` is parsed but unused: the guardian speaks native gRPC and
 CometBFT RPC, and has no REST client. It is read so the type mirrors the
 published shape rather than a guardian-shaped subset of it.
@@ -193,9 +208,27 @@ plan rather than coming here.
 It follows the shape the wizard already uses for the encryption key
 (`collectEncryptionKey`): a `collectNetwork` function that *returns* the values
 and writes nothing, with `applyInitSettings` remaining the single place the
-configuration is touched. `initSettings` gains `chainID`, `rpcEndpoint`,
-`grpcEndpoint` and `grpcTLS`; `applyInitSettings` writes the endpoints when
-non-empty, so an operator who declines selection keeps the compiled defaults.
+configuration is touched. `initSettings` gains `network`, `chainID`,
+`rpcEndpoint`, `grpcEndpoint` and `grpcTLS`; `applyInitSettings` writes the
+endpoints when non-empty, so an operator who declines selection keeps the compiled
+defaults.
+
+### The configuration records which network was chosen
+
+A `network` key in the Network group holds the selected entry's `id` — `custom`
+for a hand-typed endpoint, matching the wizard's own option. Without it the
+configuration keeps three values whose origin is unrecoverable: an operator
+reading `chain_id: timeflare-testnet-1` cannot tell whether they selected that
+network or typed it, and neither can `config doctor`.
+
+It earns its place immediately rather than waiting for a consumer. `config doctor`
+gains a drift check: when `network` names a published entry and the endpoints or
+chain id no longer match what that entry carries, it reports the difference and
+names both values. That covers the case this design otherwise leaves silent — a
+published endpoint moving after setup — turning it from something an operator finds
+out by failing into something a routine check reports. `custom` and an unknown id
+are both reported as "not checked" rather than as drift, since neither has anything
+to compare against.
 
 ### Unattended runs
 
@@ -235,12 +268,19 @@ behind. Its design is adopted unchanged rather than restated; the reason it land
 here is that network selection is what populates it, and selection producing a
 configuration the daemon cannot dial is not worth shipping.
 
-**Selection sets `grpc_tls` from the entry's `local` field.** `local: true` gives
-plaintext, which is what the devnet needs and the only place `NETWORKS.md` permits
-cleartext; anything else gives TLS against the system root pool. The operator
-therefore never has to know the key exists, and the explicit boolean that plan
-wants — rather than a scheme parsed out of the endpoint, its open question 3 —
-is exactly what a selection step can fill in.
+**Selection sets `grpc_tls` from the entry's `tls` field**, which is why that field
+is being added: it states the transport as fact rather than leaving the daemon to
+infer it. A network that declares `tls: false` — the devnet, or a private node over
+a VPN — gets plaintext, which is the safe bypass; anything declaring `tls: true`
+gets TLS against the system root pool. The operator therefore never has to know
+the key exists, and the explicit boolean that plan wants — rather than a scheme
+parsed out of the endpoint, its open question 3 — is exactly what a selection step
+can fill in.
+
+An entry with no `tls` field falls back to `!local`. That keeps this plan
+independent of when the chain lands the field, and it is the same tolerance the
+validation rule states in the other direction: a registry older than the build
+reading it is as ordinary as a newer one.
 
 The default stays plaintext for a configuration nobody selected into, so every
 colocated deployment and the devnet are untouched. That answers that plan's open
@@ -276,12 +316,35 @@ once their provenance is checked:
 |---|---|---|
 | `denom` | `uveil` | `x/secrets/types.DefaultDenom` (`constants.go:482`) |
 | `gas_price` | `0.1uveil` | consensus floor `MinGasPriceUveilNum/Den` = 1/10 (`constants.go:362-372`) |
-| `stake_amount` | `10000000000uveil` | none — the operator's own float |
+| `stake_amount` | `10000000000uveil` | none — no such value exists on the chain |
 | `fee_buffer_percent` | `1` | none — this daemon's own headroom |
 
 The first two are **protocol constants, already exported by the module this
 repository imports**, and `internal/chain/signer.go:68-69` already reads the gas
 floor from it at runtime. Only the compiled defaults are hand-copies.
+
+`stake_amount` cannot be read from anywhere, and the reason is worth recording so
+it is not looked for again. The float deposit is **optional and may be zero**
+(`chain/docs/spec.md:261`, `:286`); `MsgGuardianRegister.ValidateBasic` checks only
+that the coin is valid (`message_register_guardian.go:40-42`); and the chain has no
+parameter system at all to hold a default — `spec.md:629` states there is no
+`Params` state and no `MsgUpdateParams`, because an economic constant that could
+move beneath a year-long secret is a product defect. So there is no minimum float
+and no recommended one.
+
+What the module does export is the bond formula's inputs — `RatePerGuardianBlock`,
+`InitialBondK` (4.00), `BumpScale`, `MinBump`/`MaxBump` and
+`MaxActiveBondsPerGuardian` (100). A bond is `rate × distance × bump × k`, and
+`distance` is the individual secret's block span, so no float figure follows from
+them without assuming a secret duration. Deriving the default would mean inventing
+that assumption and presenting it as authority, which is worse than a round number
+an operator overrides with `--stake-amount`. It stays as it is.
+
+**The entry fee is a different matter.** `internal/cli/register.go:56` states "the
+1,000 VEIL entry fee" in flag help text, which is `secretstypes.EntryFeeAmount`
+(`constants.go:222-226`) written out by hand — a protocol constant copied into
+operator-facing copy, where it will be wrong the moment the chain retunes it in an
+upgrade. That help text reads the constant instead.
 
 They therefore do not belong in `networks.json`. That file is scoped to deployment
 fact and gated by `make verify-networks`; a consensus value restated there would
@@ -324,22 +387,38 @@ runs at a materially different rate.
 4. **`collectNetwork` in `internal/cli/config_init.go`** — the Step 1 prompt,
    the `--network` flag in `initFlags`/`readInitFlags`, the unselectable-network
    presentation, the custom fallback, and the renumbering of Steps 2–5.
-   `initSettings` and `applyInitSettings` gain the four fields, with `grpc_tls`
-   derived from the entry's `local`.
-5. **`internal/cli/config_init_test.go`** — selection writes all four fields;
-   a `local: false` entry sets `grpc_tls`; `--network` with an unknown id fails
-   naming the available ids; a failed fetch completes interactively with the
-   defaults intact and fails unattended; `--non-interactive` with no `--network`
-   lands on the list's `default`.
-6. **`DefaultConfig()` derives `denom` and `gas_price` from `secretstypes`** —
+   `initSettings` and `applyInitSettings` gain the five fields, with `grpc_tls`
+   from the entry's `tls` (falling back to `!local`) and `network` from its `id`.
+5. **The `network` key and its drift check** — the field on `Config` in the
+   Network group, and the `config doctor` comparison of `chain_id` and both
+   endpoints against the named entry, reporting `custom` and unknown ids as not
+   checked.
+6. **`internal/cli/config_init_test.go`** — selection writes all five fields;
+   `tls: true` sets `grpc_tls` and an entry with no `tls` falls back to `!local`;
+   `--network` with an unknown id fails naming the available ids; a failed fetch
+   completes interactively with the defaults intact and fails unattended;
+   `--non-interactive` with no `--network` lands on the list's `default`. Doctor's
+   drift check gets a matching case per branch.
+7. **`DefaultConfig()` derives `denom` and `gas_price` from `secretstypes`** —
    the gas floor expression factored out of `internal/chain/signer.go:68-69` so
-   both callers read one definition.
-7. **The chain's devnet scripts** — `devnet/guardians.sh` and
-   `devnet/docker/init-guardians.sh` set `GUARDIAN_NETWORK_LIST_URL` to the chain
-   checkout's own `networks.json`, so `dev-up` and the e2e suites exercise
-   selection without reaching GitHub. A separate change in the chain repository,
-   landing after the guardian release that understands the variable.
-8. **Docs and the transport plan** — the operator setup guide gains the selection
+   both callers read one definition — and `internal/cli/register.go:56` reads
+   `EntryFeeAmount` rather than stating 1,000 VEIL in prose.
+8. **The chain repository** — three separate changes there, none of which this
+   plan's phases depend on:
+   - `networks.json` and `verify-networks.sh` gain the `tls` field, and
+     `docs/guides/NETWORKS.md` documents it alongside `local`, stating why both
+     exist.
+   - `NETWORKS.md`'s "Consuming it" section is rewritten. It currently says no
+     consumer reads the registry and that nothing outside the chain should copy
+     it; consuming it is the file's entire purpose (ruled by the owner, 4 August
+     2026), and `mobile-client` already does
+     (`app/src/state/settings.ts:106`). It should describe the two patterns now in
+     use — a client reading it live, and a daemon reading it once at setup.
+   - `devnet/guardians.sh` and `devnet/docker/init-guardians.sh` set
+     `GUARDIAN_NETWORK_LIST_URL` to the chain checkout's own `networks.json`, so
+     `dev-up` and the e2e suites exercise selection without reaching GitHub. This
+     one lands after the guardian release that understands the variable.
+9. **Docs and the transport plan** — the operator setup guide gains the selection
    step; `CLAUDE.md` gains a line stating that the network registry is read at
    `config init` only and that the daemon's source of truth remains its
    configuration file; and
@@ -370,39 +449,14 @@ runs at a materially different rate.
   behind every address validation path in the daemon. The chain already gates it
   against `app.go`, and it is project-wide rather than per-network, so it stays
   as it is.
-- **It does not follow a moved endpoint.** Values are copied into the
-  configuration at setup and never re-read. If a published endpoint changes, an
-  existing guardian keeps the old one until an operator acts. Re-reading at
-  daemon start would make a third party able to redirect a running guardian
-  between restarts, which is a worse trade than a stale endpoint an operator can
-  see in their own configuration file.
+- **It does not follow a moved endpoint automatically.** Values are copied into
+  the configuration at setup and never re-read, so a published endpoint that moves
+  leaves an existing guardian on the old one until an operator acts — `config
+  doctor` reports the drift, and applying it is a decision rather than something
+  that happens underneath a running daemon. Re-reading at start would let whoever
+  serves the list redirect a guardian between restarts, which is a worse trade than
+  a stale endpoint an operator can see in their own configuration file.
 
 ## Open questions
 
-1. **Is a non-local network's gRPC endpoint guaranteed to be TLS-terminated?**
-   Deriving `grpc_tls` from `local` assumes it is, and the registry does not say
-   so. `make verify-networks` requires `https` for the `rpc` and `rest` URLs of a
-   non-local entry, but `grpc` is a bare `host:port` with no scheme to check, so a
-   public network could publish a plaintext gRPC host and selection would set TLS
-   against it. The dial would then fail until an operator set `grpc_tls false` —
-   which is the right direction to fail in, but it is an inference this plan is
-   making rather than a fact the registry states.
-
-   Recommendation: ask the chain owner to have `verify-networks` require a
-   non-local `grpc` entry to be TLS-terminated, matching the rule already enforced
-   on `rpc` and `rest`. That makes the inference a published guarantee and needs no
-   change here. Carrying an explicit per-entry flag instead would work, but it
-   states in the registry something the existing loopback rule already implies.
-2. **Should the chosen network's `id` be recorded in the configuration?**
-   Recommendation: not in this pass. A `network` key would let `config doctor`
-   report when the three fields have drifted from the entry they came from, and
-   would let a future `config resync` offer to follow a moved endpoint — but
-   neither exists yet, and a key that nothing reads is surface without a
-   consumer. Worth adding at the same time as the first thing that would use it.
-3. **`chain/docs/guides/NETWORKS.md:138-142` still says no consumer reads the
-   registry and that nothing outside the chain should copy it.** `mobile-client`
-   already consumes it (`app/src/state/settings.ts:106`), and this plan makes
-   `guardian` the second. Recommendation: ask the chain owner to update that
-   section to describe the two consumption patterns now in use. No code here
-   depends on the answer, but the guide currently contradicts what the workspace
-   does.
+None outstanding.
