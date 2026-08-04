@@ -11,3 +11,7 @@ dist/
 
 # Guardian runtime state (keys, logs, PIDs) — never committed
 .guardian/
+
+# Claude Code worktrees — machine-local execution checkouts, never history.
+# Deliberately narrow: .claude/settings.json, agents and skills stay committable.
+.claude/worktrees/
