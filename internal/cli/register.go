@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/pkg/errors"
@@ -11,6 +13,7 @@ import (
 	"github.com/timeflareio/guardian/internal/cli/ui"
 	"github.com/timeflareio/guardian/internal/config"
 	"github.com/timeflareio/guardian/internal/guardian"
+	"github.com/timeflareio/guardian/internal/monitoring"
 )
 
 // NewRegisterCmd creates the register command
@@ -58,6 +61,7 @@ Note: Uses encryption public key from configuration file.`,
 	cmd.Flags().String("available-until", "", "blocks from current when guardian stops being available (default: chain maximum)")
 	cmd.Flags().Bool("accepting-secrets", true, "whether guardian accepts new secret assignments (default: true)")
 	cmd.Flags().Bool("accept", false, "automatically accept and execute without prompting")
+	cmd.Flags().Bool("skip-service-check", false, "register without checking that guardiand is running (for a daemon started separately, or on another host)")
 
 	return cmd
 }
@@ -78,6 +82,7 @@ func runRegister(cmd *cobra.Command, args []string) error {
 	availableFrom, _ := cmd.Flags().GetInt64("available-from")
 	acceptingSecrets, _ := cmd.Flags().GetBool("accepting-secrets")
 	autoAccept, _ := cmd.Flags().GetBool("accept")
+	skipServiceCheck, _ := cmd.Flags().GetBool("skip-service-check")
 
 	availableUntil := int64(secretstypes.MaxAvailabilityWindow)
 	if availableUntilStr != "" {
@@ -111,6 +116,18 @@ func runRegister(cmd *cobra.Command, args []string) error {
 		u.Command("guardianctl wallet import-from-mnemonic\n")
 		u.EmptyLine()
 		return errors.New("guardian key not found")
+	}
+
+	// Registration makes this guardian a selection candidate from the next
+	// block, so the daemon wants to be up before the transaction lands rather
+	// than after it. Checked before the preview, because "start it first" is
+	// advice an operator can still act on at that point.
+	if !skipServiceCheck && !autoAccept && acceptingSecrets {
+		if !confirmServiceRunning(cmd, u, cfg) {
+			u.Note("Registration cancelled — start the service with 'guardiand start' and run this again.")
+			u.EmptyLine()
+			return nil
+		}
 	}
 
 	// Show the registration and either execute or bail
@@ -149,6 +166,45 @@ func runRegister(cmd *cobra.Command, args []string) error {
 
 	showRegistrationSuccess(u, cfg, availableFrom, availableUntil, acceptingSecrets)
 	return nil
+}
+
+// serviceCheckTimeout bounds the health probe. Short on purpose: this answers
+// "is the daemon up on this host", and an operator waiting on a registration
+// should not sit through a long timeout to be told what a refused connection
+// says immediately.
+const serviceCheckTimeout = 3 * time.Second
+
+// confirmServiceRunning probes the local health endpoint and, when the daemon
+// does not answer, states what registering without it costs and asks whether to
+// go ahead. Returns whether registration should continue.
+//
+// A guardian is a selection candidate from the block its registration lands in.
+// Nothing waits for the daemon to come up: assignments arrive, their commit
+// deadlines run, and shares nobody confirmed are shares nobody reveals — which
+// is slashed. The gap between registering and starting is the whole exposure,
+// and it is silent.
+func confirmServiceRunning(cmd *cobra.Command, u *ui.Printer, cfg *config.Config) bool {
+	url := fmt.Sprintf("http://localhost:%d", cfg.HealthPort)
+	if _, err := monitoring.CheckHealth(cmd.Context(), url, serviceCheckTimeout); err == nil {
+		return true
+	}
+
+	u.EmptyLine()
+	u.Warning("The guardian service is not answering on %s", url)
+	u.EmptyLine()
+	u.TextLn(ui.Indent1 + "Registering makes this guardian a selection candidate from the next block.")
+	u.TextLn(ui.Indent1 + "Assignments can arrive before the service is up, and a share that is never")
+	u.TextLn(ui.Indent1 + "confirmed or revealed is slashed — the daemon is what does both.")
+	u.EmptyLine()
+	u.Text(ui.Indent1 + "Start it first with: ")
+	u.Command("guardiand start\n")
+	u.TextLn(ui.Indent1 + "Then run this command again.")
+	u.EmptyLine()
+	u.Note(ui.Indent1 + "If the daemon runs elsewhere, or you intend to start it shortly, continuing is fine.")
+	u.Note(ui.Indent1 + "Use --skip-service-check to stop being asked.")
+	u.EmptyLine()
+
+	return u.Confirm("Register anyway, without the service running?")
 }
 
 // showRegistrationAndConfirm displays the registration parameters and asks

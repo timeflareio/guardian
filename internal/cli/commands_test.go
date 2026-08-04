@@ -2,8 +2,10 @@ package cli
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -172,6 +174,61 @@ func TestRegisterRequiresAnEncryptionKey(t *testing.T) {
 	if !strings.Contains(err.Error(), "encryption public key") {
 		t.Errorf("error does not name the missing key: %v", err)
 	}
+}
+
+// A guardian is a selection candidate from the block its registration lands in,
+// and nothing waits for the daemon to come up. Registering with the service down
+// must say so and stop, not proceed quietly.
+func TestRegisterStopsWhenTheServiceIsNotRunning(t *testing.T) {
+	g := newFixture(t)
+	g.initialised("guardian-one")
+	g.mustRun("", "config", "set", "health-port", closedLocalPort(t))
+
+	out := g.mustRun("n\n", "register")
+	if !strings.Contains(out, "not answering") {
+		t.Errorf("register did not report the service as down:\n%s", out)
+	}
+	if !strings.Contains(out, "slashed") {
+		t.Errorf("register did not say what the exposure is:\n%s", out)
+	}
+	if !strings.Contains(out, "cancelled") {
+		t.Errorf("declining the prompt should stop the registration:\n%s", out)
+	}
+	if strings.Contains(out, "Registration Preview") {
+		t.Errorf("register reached the transaction preview after being declined:\n%s", out)
+	}
+}
+
+// The check is advice, not a gate: an operator whose daemon runs elsewhere has
+// to be able to turn it off.
+func TestRegisterSkipsTheServiceCheckOnRequest(t *testing.T) {
+	g := newFixture(t)
+	g.initialised("guardian-one")
+	g.mustRun("", "config", "set", "health-port", closedLocalPort(t))
+
+	out := g.mustRun("n\n", "register", "--skip-service-check")
+	if strings.Contains(out, "not answering") {
+		t.Errorf("--skip-service-check still probed the service:\n%s", out)
+	}
+	if !strings.Contains(out, "Registration Preview") {
+		t.Errorf("register should have gone straight to the preview:\n%s", out)
+	}
+}
+
+// closedLocalPort reserves a port and releases it, so the health probe has
+// somewhere definitely-not-listening to fail against rather than whatever the
+// developer happens to be running on the default.
+func closedLocalPort(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserving a port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	if err := ln.Close(); err != nil {
+		t.Fatalf("releasing the port: %v", err)
+	}
+	return strconv.Itoa(port)
 }
 
 // update must refuse a no-op rather than signing and broadcasting nothing.
