@@ -3,6 +3,13 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with
 code in this repository.
 
+**It is not the whole picture.** The project-wide rules — the working agreement,
+the writing conventions (British English, VEIL is a token, never name the owner),
+the plan-first mandate, specification authority, and how a change crosses a
+repository boundary — are stated once in the workspace root `CLAUDE.md`, at
+`~/dev/timeflareio/CLAUDE.md`, which loads alongside this file. Read it if you
+are in a checkout that cannot see it.
+
 ## Project Overview
 
 **timeflare guardian** is `guardiand`, the daemon third-party guardians run. It
@@ -88,54 +95,12 @@ primitives as a module and lets that module's own suites prove them.
 - `make go-govulncheck` — vulnerability scan (advisory; accepted findings and
   their reachability reasoning are in `.govulncheck-accepted`)
 
-## 📋 Specification Authority
+## Specific to this repository
 
-`docs/spec.md` **in the chain repository** is the single source of truth for
-protocol behaviour, guardian eligibility and selection, bonding and slashing
-amounts, and secret lifecycle timing. Link it at a pinned tag; never copy it
-here.
-
-If the spec is unclear or silent on something this daemon needs: **stop** and ask
-the owner to clarify and update it. Do not infer protocol behaviour from this
-daemon's existing code — the code may be the thing that is wrong.
-
-## 🚨 Plan-First Workflow (mandatory — everything)
-
-All work is executed from an approved plan in `docs/planning/`. Code, docs,
-dependency changes: every change traces to a plan the owner has approved.
-Discussion is not approval — answering a question or receiving a favourable reply
-is never licence to edit. Propose, wait for the ruling, fold it into a plan, then
-execute. The only exception is a change the owner explicitly requests in the
-moment, and even then the scope is exactly what was asked.
-
-The rules for authoring and refining plans are in `docs/planning/README.md`.
-
-## Important Instructions for Claude
-
-- Do what has been asked; nothing more, nothing less
-- NEVER create files unless explicitly asked to implement or code a solution
-- When asked to "elaborate", "explain", or give "feedback", give verbal
-  explanations only
-- ALWAYS prefer editing existing files over creating new ones
-- **🚨 CRITICAL: When asked to create a "plan", ONLY create the plan document —
-  DO NOT start implementing**
-- **Always wait for explicit approval** before proceeding from planning to
-  implementation
-- **🚨 CRITICAL: Keep the architecture minimal.** Never introduce a new
-  component without arguing the case and getting explicit confirmation first.
-  Default to extending what exists.
-- NEVER create code in production code spaces purely for the purpose of tests
-- **Documentation Language**: ALL documentation must use British English
-- **Spelling Standard**: use `-ise` endings (organise, realise), `-our` endings
-  (behaviour), `-sation` endings (organisation)
-- **🚨 VEIL is a token, never money.** Do not use "money", "cash", "funds",
-  "payment" or any currency framing for VEIL — in code, comments, documentation,
-  plans, commit messages, UI copy or conversation. Say "token", "VEIL", "uveil",
-  "balance", "amount", "fee", "cost", "bond", "reward" or "rebate". This is not a
-  style preference: describing a token as money makes a regulatory claim the
-  project does not make.
-- **🚨 NEVER name the owner.** No personal name appears anywhere in the
-  repository — not in code, comments, documentation, plans, commit messages or
-  test fixtures. Decisions are attributed to **"the owner"**, never to a person.
-  This covers every form: given name, surname, handle, email address, and machine
-  paths that embed a username.
+- **The spec is not here.** `docs/spec.md` in the chain repository governs
+  guardian eligibility and selection, bonding and slashing amounts, and secret
+  lifecycle timing. Link it at a pinned tag; never copy it here. The rules for
+  consulting it are in the workspace root `CLAUDE.md` — including the one that
+  bites hardest for a consumer: never infer protocol behaviour from this daemon's
+  existing code, because the code may be what is wrong.
+- Plans live in `docs/planning/`, per its `README.md`.
