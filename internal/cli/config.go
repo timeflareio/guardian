@@ -59,7 +59,6 @@ Use --config-path to specify a different location.`,
 	cmd.AddCommand(NewConfigDoctorCmd())
 	cmd.AddCommand(NewConfigCreateEncryptionKeyCmd())
 	cmd.AddCommand(NewConfigMigrateKeyCmd())
-	cmd.AddCommand(NewConfigSetDashboardPasswordCmd())
 
 	return cmd
 }

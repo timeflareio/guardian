@@ -97,34 +97,22 @@ type Config struct {
 	// Dashboard: the operator's read-only page, on the shared BindAddress
 	// alongside health and metrics.
 	//
-	// The page names bond exposure, key fingerprints, the encrypted-at-rest
-	// status (including the plaintext-key warning) and the full config, so
-	// beyond loopback it needs a credential: dashboard_password_hash holds a
-	// bcrypt hash and the dashboard is not served without one on a non-loopback
-	// bind address. The hash is not a secret — a leaked config file yields an
-	// offline attack against it, which is why 'set-dashboard-password
-	// --generate' exists.
+	// It carries no credential and no TLS of its own, which is a constraint on
+	// what it may render rather than an omission. The page shows only what the
+	// chain already publishes about this guardian — address, assignments, bonds,
+	// key fingerprints, epochs — plus liveness. Nothing host-local reaches it:
+	// no filesystem paths, no endpoints, no key custody posture. That last one
+	// mattered most; a page that said whether the share key was still stored in
+	// plaintext told an attacker which guardians were worth attacking.
 	//
-	// The rule keys off the bind address, which under Docker is not a proxy for
-	// exposure: a container binds 0.0.0.0 for -p to publish anything, and the
-	// daemon cannot see what was published. Erring towards an unserved page is
-	// the deliberate choice — the alternative is an operator-asserted "not
-	// exposed" flag that can be set once and forgotten.
-	EnableDashboard bool `config:"enable_dashboard" group:"Monitoring" desc:"Serve the read-only operator dashboard (needs dashboard_password_hash beyond loopback)"`
-	DashboardPort   int  `config:"dashboard_port" group:"Monitoring" desc:"Operator dashboard port"`
-	// Displayed as set/not set rather than as the hash itself: a 60-character
-	// blob in an operator's config report is noise, not a disclosure risk.
-	DashboardPasswordHash string `config:"dashboard_password_hash" group:"Monitoring" desc:"bcrypt hash of the dashboard password (set it with 'guardianctl config set-dashboard-password')" display:"presence"`
-	// TLS for the dashboard listener alone; health and metrics are unaffected.
-	// Both or neither. Without it Basic auth defends against unauthorised
-	// readers but not against a network eavesdropper — base64 is not
-	// encryption, and the credential crosses the network on every poll.
-	DashboardTLSCertFile string `config:"dashboard_tls_cert_file" group:"Monitoring" desc:"PEM certificate serving the dashboard over TLS (with dashboard_tls_key_file)" path:"true"`
-	DashboardTLSKeyFile  string `config:"dashboard_tls_key_file" group:"Monitoring" desc:"PEM private key serving the dashboard over TLS (with dashboard_tls_cert_file)" path:"true"`
-	EnableHealthCheck    bool   `config:"enable_health_check" group:"Monitoring" desc:"Serve the health/readiness endpoints"`
-	LogLevel             string `config:"log_level" group:"Monitoring" desc:"Logging level (debug, info, warn, error)"`
-	LogFormat            string `config:"log_format" group:"Monitoring" desc:"Log output format (console, json)"`
-	LogFilePath          string `config:"log_file_path" group:"Monitoring" desc:"Log file path (empty = stderr)" path:"true"`
+	// Anything added here that a chain query could not already answer needs that
+	// rule revisited first, not a credential bolted back on.
+	EnableDashboard   bool   `config:"enable_dashboard" group:"Monitoring" desc:"Serve the read-only operator dashboard"`
+	DashboardPort     int    `config:"dashboard_port" group:"Monitoring" desc:"Operator dashboard port"`
+	EnableHealthCheck bool   `config:"enable_health_check" group:"Monitoring" desc:"Serve the health/readiness endpoints"`
+	LogLevel          string `config:"log_level" group:"Monitoring" desc:"Logging level (debug, info, warn, error)"`
+	LogFormat         string `config:"log_format" group:"Monitoring" desc:"Log output format (console, json)"`
+	LogFilePath       string `config:"log_file_path" group:"Monitoring" desc:"Log file path (empty = stderr)" path:"true"`
 
 	// Lazy loading state (not serialised). Held behind a pointer so Config
 	// values can be copied (Manager.GetConfig) while sharing one key cache.
@@ -193,20 +181,15 @@ func DefaultConfig() *Config {
 		// so a collision can never be a random one, and outside Kubernetes'
 		// 30000–32767 NodePort range. The devnet fans out from the same bases
 		// (guardian i takes 21000+i / 21100+i — devnet/guardians.sh).
-		MetricsPort:     21100,
-		HealthPort:      21000,
-		EnableMetrics:   true,
-		EnableDashboard: true,
-		DashboardPort:   21200,
-		// Empty by default, so a guardian binding beyond loopback does not
-		// serve the dashboard until an operator sets a credential.
-		DashboardPasswordHash: "",
-		DashboardTLSCertFile:  "",
-		DashboardTLSKeyFile:   "",
-		EnableHealthCheck:     true,
-		LogLevel:              "info",
-		LogFormat:             "console",
-		LogFilePath:           "",
+		MetricsPort:       21100,
+		HealthPort:        21000,
+		EnableMetrics:     true,
+		EnableDashboard:   true,
+		DashboardPort:     21200,
+		EnableHealthCheck: true,
+		LogLevel:          "info",
+		LogFormat:         "console",
+		LogFilePath:       "",
 	}
 }
 
@@ -273,17 +256,6 @@ func (cfg *Config) Validate() error {
 		}
 		if fmt.Sprintf("%d", cfg.DashboardPort) == p {
 			return fmt.Errorf("dashboard_port %d collides with grpc_endpoint %s", cfg.DashboardPort, cfg.GRPCEndpoint)
-		}
-	}
-
-	// A half-configured pair would otherwise fail at listener setup, long after
-	// the operator typed the one path they remembered.
-	if (cfg.DashboardTLSCertFile == "") != (cfg.DashboardTLSKeyFile == "") {
-		return fmt.Errorf("dashboard_tls_cert_file and dashboard_tls_key_file must be set together")
-	}
-	if cfg.DashboardPasswordHash != "" {
-		if err := ValidatePasswordHash(cfg.DashboardPasswordHash); err != nil {
-			return fmt.Errorf("invalid dashboard_password_hash: %w", err)
 		}
 	}
 

@@ -5,6 +5,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/timeflareio/guardian/internal/chain"
 	"github.com/timeflareio/guardian/internal/cli/ui"
+	"github.com/timeflareio/guardian/internal/config"
 )
 
 // `config doctor` reports the configuration as the running service would
@@ -89,7 +90,7 @@ func runConfigDoctor(cmd *cobra.Command, configOnly bool) error {
 	// everything below reaches for key material that a host being prepared may
 	// not hold yet. This is what `config validate` used to answer on its own.
 	if configOnly {
-		reportDashboardExposure(u, effective)
+		reportDashboard(u, effective)
 		u.EmptyLine()
 		if failed {
 			return errors.New("configuration doctor found problems")
@@ -117,7 +118,7 @@ func runConfigDoctor(cmd *cobra.Command, configOnly bool) error {
 		u.Success("Encryption key: loads from %s", effective.EncryptionPrivateKeyPath)
 	}
 
-	reportDashboardExposure(u, effective)
+	reportDashboard(u, effective)
 
 	u.EmptyLine()
 	if failed {
@@ -126,4 +127,21 @@ func runConfigDoctor(cmd *cobra.Command, configOnly bool) error {
 	u.Success("Guardian configuration is operational ✓")
 	u.EmptyLine()
 	return nil
+}
+
+// reportDashboard states where the operator page will be served and what it
+// will and will not say.
+//
+// It never fails the doctor. The dashboard carries no credential and nothing
+// confidential, so there is no misconfiguration left for it to be wrong about —
+// only a port an operator may not have meant to publish, which is worth naming
+// once and is not a reason to call the guardian unhealthy.
+func reportDashboard(u *ui.Printer, cfg *config.Config) {
+	if !cfg.EnableDashboard {
+		u.Note("Dashboard: disabled (enable_dashboard is false)")
+		return
+	}
+	u.Success("Dashboard: read-only on %s:%d, no credential", cfg.BindAddress, cfg.DashboardPort)
+	u.Note("It serves what the chain already publishes about this guardian, plus liveness — no paths, endpoints or key custody detail.")
+	u.Note("Anything that changes the guardian is guardianctl on this host, never the page.")
 }

@@ -11,7 +11,6 @@ import (
 
 	crypto "github.com/timeflareio/crypto/go"
 	"github.com/timeflareio/guardian/internal/chain"
-	"github.com/timeflareio/guardian/internal/custody"
 	"github.com/timeflareio/guardian/internal/dashboard"
 )
 
@@ -48,15 +47,13 @@ func (s *Service) Vitals(ctx context.Context) dashboard.Vitals {
 	running := s.isRunning
 	registered := s.isRegistered
 	version := s.version
-	configPath := s.configPath
 	s.mu.RUnlock()
 
+	// configPath, RPCEndpoint and GRPCEndpoint are read but not published: they
+	// describe the operator's host and network, which this page does not carry.
 	v := dashboard.Vitals{
 		GuardianAddress: s.config.GuardianAddress,
 		ChainID:         s.config.ChainID,
-		ConfigPath:      configPath,
-		RPCEndpoint:     s.config.RPCEndpoint,
-		GRPCEndpoint:    s.config.GRPCEndpoint,
 		StartedAt:       s.startedAt,
 		Running:         running,
 		Registered:      registered,
@@ -328,16 +325,13 @@ func revealsToFloor(k int64) int {
 
 // Keys implements dashboard.Source.
 func (s *Service) Keys(ctx context.Context) dashboard.Keys {
+	// Fingerprints and epochs only. The key's location and its at-rest status
+	// are not computed here at all, rather than computed and withheld: the
+	// at-rest answer names the guardians worth attacking, and this page has no
+	// credential in front of it. `guardianctl config doctor` reports both on the
+	// host, to whoever can already read the key.
 	out := dashboard.Keys{
 		Address: s.config.GuardianAddress,
-		KeyPath: s.config.EncryptionPrivateKeyPath,
-	}
-
-	if encrypted, err := custody.IsEncryptedKeyFile(s.config.EncryptionPrivateKeyPath); err == nil {
-		out.EncryptedAtRest = encrypted
-		// The warning is the point of the panel: a plaintext share key means
-		// anyone who can read the host can decrypt every assigned share.
-		out.PlaintextWarn = !encrypted
 	}
 
 	g, err := s.client.GetGuardian(ctx, s.config.GuardianAddress)
@@ -428,35 +422,25 @@ func fingerprint(key []byte) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// Config implements dashboard.Source.
-func (s *Service) Config(ctx context.Context) dashboard.Config {
-	out := dashboard.Config{ValidationOK: true}
-	if err := s.config.Validate(); err != nil {
-		out.ValidationOK = false
-		out.ValidationComplaint = err.Error()
-	}
-
-	local := []dashboard.ConfigField{
-		{Name: "guardian_address", Group: "Identity", Local: s.config.GuardianAddress},
-		{Name: "chain_id", Group: "Chain", Local: s.config.ChainID},
-		{Name: "rpc_endpoint", Group: "Chain", Local: s.config.RPCEndpoint},
-		{Name: "grpc_endpoint", Group: "Chain", Local: s.config.GRPCEndpoint},
-		{Name: "polling_interval", Group: "Operations", Local: s.config.PollingInterval.String()},
-		{Name: "reveal_offset_blocks", Group: "Operations",
-			Local: fmt.Sprintf("%d", s.config.RevealOffsetBlocks),
-			Note:  "random offset after window-open before revealing"},
-		{Name: "enable_event_monitoring", Group: "Operations",
-			Local: fmt.Sprintf("%t", s.config.EnableEventMonitoring)},
-		{Name: "encryption_private_key_path", Group: "Identity & Keys",
-			Local: s.config.EncryptionPrivateKeyPath},
-	}
+// Registration implements dashboard.Source.
+//
+// Only settings the chain also holds are presented. The local-only ones this
+// used to list — rpc_endpoint, grpc_endpoint, encryption_private_key_path,
+// polling_interval, reveal_offset_blocks, enable_event_monitoring — are gone
+// because this page carries nothing host-local. reveal_offset_blocks was the
+// worst of them: it publishes exactly how long after window-open this daemon
+// waits before revealing.
+func (s *Service) Registration(ctx context.Context) dashboard.Registration {
+	// Whether the configuration validates is safe to state; why it does not is
+	// not, because the complaint quotes the offending value.
+	out := dashboard.Registration{ConfigValid: s.config.Validate() == nil}
 
 	g, err := s.client.GetGuardian(ctx, s.config.GuardianAddress)
 	if err != nil {
-		out.Fields = local
+		out.Fields = []dashboard.RegistrationField{}
 		out.Unavailable = dashboard.Unavailable{
 			Unavailable: true,
-			Reason:      fmt.Sprintf("on-chain record unavailable, drift cannot be computed: %v", err),
+			Reason:      "on-chain record unavailable, drift cannot be computed",
 		}
 		return out
 	}
@@ -464,21 +448,20 @@ func (s *Service) Config(ctx context.Context) dashboard.Config {
 	// Drift: only fields with a genuine on-chain counterpart are compared.
 	// Inventing a chain value for a local-only setting would manufacture drift.
 	chainKey := fmt.Sprintf("%x", g.EncryptionPublicKey)
-	local = append(local,
-		dashboard.ConfigField{Name: "encryption_public_key", Group: "Identity & Keys",
+	out.Fields = []dashboard.RegistrationField{
+		{Name: "encryption_public_key",
 			Local: s.config.EncryptionPublicKey, Chain: chainKey,
 			Drift: s.config.EncryptionPublicKey != "" && s.config.EncryptionPublicKey != chainKey,
-			Note:  "immutable per epoch — rotate to change"},
-		dashboard.ConfigField{Name: "accepting_secrets", Group: "Registration",
+			Note:  "immutable per epoch — rotate with guardianctl rotate-key"},
+		{Name: "accepting_secrets",
 			Chain: fmt.Sprintf("%t", g.AcceptingSecrets), Local: "—",
-			Note: "chain-side switch; guardiand update toggles it"},
-	)
-	for i := range local {
-		if local[i].Drift {
+			Note: "chain-side switch; guardianctl update toggles it"},
+	}
+	for i := range out.Fields {
+		if out.Fields[i].Drift {
 			out.DriftCount++
 		}
 	}
-	out.Fields = local
 
 	out.AvailableFrom = g.AvailableFrom
 	out.AvailableUntil = g.AvailableUntil
@@ -494,7 +477,7 @@ func (s *Service) Config(ctx context.Context) dashboard.Config {
 		if out.BlocksRemaining > 0 {
 			out.EligibilityWarning = true
 			out.EligibilityNote = fmt.Sprintf(
-				"Availability ends in %d blocks. Selection requires available_until ≥ a secret's reveal_end_block, so this guardian is already excluded from any secret revealing beyond that height — extend with guardiand update.",
+				"Availability ends in %d blocks. Selection requires available_until ≥ a secret's reveal_end_block, so this guardian is already excluded from any secret revealing beyond that height — extend with guardianctl update.",
 				out.BlocksRemaining)
 		} else {
 			out.EligibilityWarning = true
@@ -523,9 +506,11 @@ func (s *Service) Activity(_ context.Context) dashboard.Activity {
 		})
 	}
 	for _, x := range snap.Submissions {
+		// x.Err is deliberately dropped rather than passed through: a broadcast
+		// failure quotes the endpoint it could not reach.
 		out.Submissions = append(out.Submissions, dashboard.ActivitySubmission{
 			At: x.At, Kind: string(x.Kind), SecretID: x.SecretID, TxHash: x.TxHash,
-			Success: x.Success, Err: x.Err, Height: x.Height,
+			Success: x.Success, Height: x.Height,
 		})
 	}
 	for _, x := range snap.Settlements {

@@ -6,9 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/crypto/bcrypt"
-
-	"github.com/timeflareio/guardian/internal/cli/ui"
 	"github.com/timeflareio/guardian/internal/custody"
 )
 
@@ -112,45 +109,6 @@ func TestConfigInitRefusesToOverwriteExistingConfig(t *testing.T) {
 	}
 }
 
-// Flag mode is what an automated fleet uses, so a missing flag has to be an
-// error rather than a silent fall-through to a prompt that no one will answer.
-// init can leave the dashboard reachable rather than withheld, but the password
-// it sets has to reach the file as a hash and the plaintext has to be shown, or
-// the operator has a dashboard nobody can open.
-func TestConfigInitGeneratesADashboardPassword(t *testing.T) {
-	g := newFixture(t)
-	g.mustRun("", "wallet", "create", "--name", "guardian-one")
-
-	out := g.mustRun("",
-		"config", "init",
-		"--key-name", "guardian-one",
-		"--keyring-backend", "test",
-		"--keyring-dir", g.dir,
-		"--keyring-passphrase", "keyring-pass",
-		"--auto-generate-key",
-		"--encryption-key-passphrase", "at-rest-pass",
-		"--generate-dashboard-password",
-	)
-
-	hash := g.get("dashboard-password-hash")
-	if hash == "" {
-		t.Fatalf("init set no dashboard password hash:\n%s", out)
-	}
-
-	password := printedDashboardPassword(t, out)
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
-		t.Errorf("the stored hash does not verify the password init printed")
-	}
-	// The plaintext exists only in that one line of output.
-	stored, err := os.ReadFile(g.configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(stored), password) {
-		t.Error("the dashboard password was written to the configuration in plaintext")
-	}
-}
-
 // --non-interactive is the explicit spelling of a mode that used to be inferred
 // from which flags happened to be named. It has to name everything it is short
 // of, not fail on the first one, and it must not prompt.
@@ -194,48 +152,6 @@ func TestConfigInitRejectsAMalformedEncryptionKey(t *testing.T) {
 	if !strings.Contains(err.Error(), "64 hex characters") {
 		t.Errorf("init did not explain the key length: %v", err)
 	}
-}
-
-// The password is never a flag value, so the two ways of supplying one cannot
-// both be meant at once.
-func TestConfigInitRefusesBothDashboardPasswordSwitches(t *testing.T) {
-	g := newFixture(t)
-	g.mustRun("", "wallet", "create", "--name", "guardian-one")
-
-	out, err := g.run("",
-		"config", "init",
-		"--key-name", "guardian-one",
-		"--keyring-backend", "test",
-		"--keyring-dir", g.dir,
-		"--keyring-passphrase", "keyring-pass",
-		"--auto-generate-key",
-		"--encryption-key-passphrase", "at-rest-pass",
-		"--generate-dashboard-password",
-		"--dashboard-password-stdin",
-	)
-	if err == nil {
-		t.Fatalf("init accepted both dashboard password switches:\n%s", out)
-	}
-	if !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Errorf("init did not name the conflict: %v", err)
-	}
-}
-
-// printedDashboardPassword recovers the one line init prints the generated
-// password on — the only place it ever exists.
-func printedDashboardPassword(t *testing.T, out string) string {
-	t.Helper()
-	lines := strings.Split(out, "\n")
-	for i, line := range lines {
-		if !strings.Contains(line, "shown once") || i+1 >= len(lines) {
-			continue
-		}
-		if password := strings.TrimSpace(ui.StripANSI(lines[i+1])); password != "" {
-			return password
-		}
-	}
-	t.Fatalf("init did not print the generated dashboard password:\n%s", out)
-	return ""
 }
 
 func TestConfigInitFlagModeRequiresCompleteFlags(t *testing.T) {

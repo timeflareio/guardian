@@ -22,16 +22,18 @@ var assets embed.FS
 const handlerTimeout = 8 * time.Second
 
 // Handler returns the dashboard's HTTP handler: the embedded page at / and one
-// JSON snapshot endpoint per section, behind auth.
+// JSON snapshot endpoint per section.
+//
+// There is no authentication, and that is a constraint on what these endpoints
+// may carry rather than an omission — see the package comment. Every route here
+// must answer with what the chain already publishes about this guardian, plus
+// liveness. A route that would carry anything host-local needs the rule
+// revisited, not a credential added back.
 //
 // Endpoints are versionless plain JSON by design (plan §2) — this serves one
 // embedded UI shipped in the same binary, so there is no second consumer to
 // keep compatible and a version negotiation would be ceremony.
-//
-// auth wraps the whole mux rather than each route, so a route added later
-// cannot be reached unauthenticated: the shape must make an unauthenticated
-// route impossible to add, not merely unlikely.
-func Handler(src Source, auth Authenticator) http.Handler {
+func Handler(src Source) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.Handle("GET /", http.FileServerFS(pageFS()))
@@ -47,19 +49,14 @@ func Handler(src Source, auth Authenticator) http.Handler {
 	mux.HandleFunc("GET /api/keys", section(func(r *http.Request) any {
 		return src.Keys(r.Context())
 	}))
-	mux.HandleFunc("GET /api/config", section(func(r *http.Request) any {
-		return src.Config(r.Context())
+	mux.HandleFunc("GET /api/registration", section(func(r *http.Request) any {
+		return src.Registration(r.Context())
 	}))
 	mux.HandleFunc("GET /api/activity", section(func(r *http.Request) any {
 		return src.Activity(r.Context())
 	}))
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !auth.authenticate(w, r) {
-			return
-		}
-		mux.ServeHTTP(w, r)
-	})
+	return mux
 }
 
 // section wraps one snapshot assembler: bounded context, no caching, JSON out.

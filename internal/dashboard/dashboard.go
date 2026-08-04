@@ -13,25 +13,31 @@
 // guardian service implements — the same inversion SetObservability already
 // uses for metrics and health.
 //
-// # Read-only, and authenticated beyond loopback
+// # Read-only, and safe to serve unauthenticated
 //
 // Nothing here signs, and nothing mutates daemon state — every route is a GET,
-// which is why no CSRF defence is included. That is a property of the current
-// surface, not a guarantee about the next one.
+// which is why no CSRF defence is included. Everything that changes a guardian
+// lives in guardianctl: registration updates, key rotation, configuration. The
+// page says so in its footer rather than offering any of it.
 //
-// Read-only is not the same as safe to expose. The page names bond exposure,
-// key fingerprints and — pointedly — whether the share key is still stored in
-// plaintext, and that last one tells an attacker which guardians are worth
-// attacking. So this is a confidentiality and targeting problem: beyond
-// loopback the handler is wrapped in Basic auth against a bcrypt hash, and the
-// daemon does not bind the listener at all when a credential is missing
-// (monitoring.Service). On loopback it serves unauthenticated, because there is
-// nothing to defend and a password on a developer's 127.0.0.1 is ceremony —
-// an exemption argued from what a GET gives away, so it covers reads only.
+// There is no credential and no TLS, and that is a constraint on the content
+// rather than an omission. The rule is:
 //
-// One shared operator credential is the whole access model: there is no
-// multi-user model to express, no per-action authorisation, and nothing to
-// audit beyond access itself. A surface that signs would need more.
+//	Every field served here must be something the chain already publishes
+//	about this guardian, or plain liveness. Nothing host-local.
+//
+// So: address, assignments, bonds, balances, key fingerprints, epochs and the
+// registration record — all of which anyone can already query — plus uptime,
+// heights and whether the daemon is running. No filesystem paths, no RPC or
+// gRPC endpoints, no local configuration dump, and above all nothing about key
+// custody posture. That last one was the sharpest: a page reporting whether the
+// share key was still stored in plaintext told an attacker which guardians were
+// worth attacking, which is a targeting signal no amount of authentication
+// makes safe to compute.
+//
+// A field that breaks the rule does not get a password bolted back on — it gets
+// left out, or the rule gets revisited deliberately. Auth on an operator page
+// is one shared credential, which is not an access model so much as a delay.
 package dashboard
 
 import (
@@ -54,10 +60,13 @@ type Source interface {
 	// Economics is float, bond multiplier, exposure and balance
 	// (panels 8-12). It reads the chain, so it may report Unavailable.
 	Economics(ctx context.Context) Economics
-	// Keys is key identity and rotation state (panels 13, 14).
+	// Keys is key identity and rotation state (panels 13, 14). Fingerprints
+	// and epochs only — never where the key lives or how it is stored.
 	Keys(ctx context.Context) Keys
-	// Config is the local config with the on-chain drift overlay (panel 15).
-	Config(ctx context.Context) Config
+	// Registration is the guardian's on-chain record: its availability window
+	// and the two settings the local daemon can disagree with it about
+	// (panel 15).
+	Registration(ctx context.Context) Registration
 	// Activity is the since-start observation buffers (panels 4, 6, 7).
 	Activity(ctx context.Context) Activity
 }
@@ -75,12 +84,13 @@ type Unavailable struct {
 type Vitals struct {
 	Unavailable `json:",inline"`
 
-	GuardianAddress string        `json:"guardian_address"`
-	ChainID         string        `json:"chain_id"`
-	Version         string        `json:"version"`
-	ConfigPath      string        `json:"config_path"`
-	RPCEndpoint     string        `json:"rpc_endpoint"`
-	GRPCEndpoint    string        `json:"grpc_endpoint"`
+	GuardianAddress string `json:"guardian_address"`
+	ChainID         string `json:"chain_id"`
+	Version         string `json:"version"`
+	// The endpoints this daemon dials and the paths it reads are deliberately
+	// absent: they describe the operator's infrastructure, not the guardian's
+	// chain-visible state. An operator who wants them runs `guardianctl config
+	// doctor` on the host.
 	StartedAt       time.Time     `json:"started_at"`
 	Uptime          string        `json:"uptime"`
 	UptimeSeconds   int64         `json:"uptime_seconds"`
@@ -202,10 +212,12 @@ type Keys struct {
 	RegisteredFingerprint string `json:"registered_fingerprint"`
 	LocalFingerprint      string `json:"local_fingerprint"`
 	Matches               bool   `json:"fingerprints_match"`
-
-	EncryptedAtRest bool   `json:"encrypted_at_rest"`
-	PlaintextWarn   bool   `json:"plaintext_key_warning"`
-	KeyPath         string `json:"key_path"`
+	// Both fingerprints are of public keys the chain already carries, so a
+	// mismatch is safe to state. What is deliberately absent is anything about
+	// the private key: where it lives, and whether it is encrypted at rest. The
+	// second was a targeting signal — it named the guardians worth attacking —
+	// and `guardianctl config doctor` answers it on the host, where the operator
+	// asking is the operator who can act on it.
 
 	CurrentEpoch uint64     `json:"current_epoch"`
 	Epochs       []KeyEpoch `json:"epochs"`
@@ -217,10 +229,16 @@ type Keys struct {
 	RotationNote             string `json:"rotation_note,omitempty"`
 }
 
-// ConfigField is one presented setting, with its drift overlay (panel 15).
-type ConfigField struct {
+// RegistrationField is one setting the chain holds and the daemon can disagree
+// with, with its drift overlay (panel 15).
+//
+// Only settings with a genuine on-chain counterpart appear, which is also what
+// keeps this safe to serve: both sides of every comparison are already public.
+// The local-only settings this panel used to list — endpoints, key paths,
+// polling and reveal-offset timings — are gone. The timings mattered most:
+// reveal_offset_blocks says exactly when this daemon intends to act.
+type RegistrationField struct {
 	Name  string `json:"name"`
-	Group string `json:"group"`
 	Local string `json:"local"`
 	// Chain is the registered value where one exists; Drift marks disagreement.
 	Chain string `json:"chain,omitempty"`
@@ -228,22 +246,26 @@ type ConfigField struct {
 	Note  string `json:"note,omitempty"`
 }
 
-// Config — panel 15.
-type Config struct {
+// Registration — panel 15: the guardian's on-chain record.
+type Registration struct {
 	Unavailable `json:",inline"`
 
-	Fields []ConfigField `json:"fields"`
+	Fields []RegistrationField `json:"fields"`
 	// Availability overlay: the countdown, and the eligibility warning. A
 	// shrinking available_until stops long-dated assignments well BEFORE it
 	// expires, because selection requires available_until >= reveal_end_block.
-	AvailableFrom       int64  `json:"available_from"`
-	AvailableUntil      int64  `json:"available_until"`
-	BlocksRemaining     int64  `json:"blocks_remaining"`
-	EligibilityWarning  bool   `json:"eligibility_warning"`
-	EligibilityNote     string `json:"eligibility_note,omitempty"`
-	DriftCount          int    `json:"drift_count"`
-	ValidationOK        bool   `json:"validation_ok"`
-	ValidationComplaint string `json:"validation_complaint,omitempty"`
+	AvailableFrom      int64  `json:"available_from"`
+	AvailableUntil     int64  `json:"available_until"`
+	BlocksRemaining    int64  `json:"blocks_remaining"`
+	EligibilityWarning bool   `json:"eligibility_warning"`
+	EligibilityNote    string `json:"eligibility_note,omitempty"`
+	DriftCount         int    `json:"drift_count"`
+	// ConfigValid reports whether the local configuration passes validation.
+	// The complaint itself is not served: validation messages quote the values
+	// that failed, which is how a path or an endpoint would reach this page
+	// through the one field that promised not to carry them. `guardianctl
+	// config doctor --config-only` prints it on the host.
+	ConfigValid bool `json:"config_valid"`
 }
 
 // Activity — panels 4, 6 and 7, all since process start.
@@ -273,13 +295,17 @@ type ActivityDecision struct {
 }
 
 // ActivitySubmission mirrors guardian.Submission.
+//
+// The failure text is deliberately not carried. A broadcast error quotes the
+// endpoint it could not reach, so serving it would leak the operator's
+// infrastructure through the one field nobody thinks to check. Success is
+// enough to see that something is wrong; the daemon log says what.
 type ActivitySubmission struct {
 	At       time.Time `json:"at"`
 	Kind     string    `json:"kind"`
 	SecretID string    `json:"secret_id"`
 	TxHash   string    `json:"tx_hash,omitempty"`
 	Success  bool      `json:"success"`
-	Err      string    `json:"error,omitempty"`
 	Height   int64     `json:"height,omitempty"`
 }
 

@@ -14,12 +14,12 @@ import (
 // stubSource is a Source with fixed answers, so handler behaviour is tested
 // without a chain or a daemon.
 type stubSource struct {
-	vitals      Vitals
-	assignments Assignments
-	economics   Economics
-	keys        Keys
-	config      Config
-	activity    Activity
+	vitals       Vitals
+	assignments  Assignments
+	economics    Economics
+	keys         Keys
+	registration Registration
+	activity     Activity
 	// slow makes every section block, to exercise the handler timeout.
 	slow bool
 }
@@ -38,8 +38,11 @@ func (s *stubSource) Assignments(ctx context.Context) Assignments {
 }
 func (s *stubSource) Economics(ctx context.Context) Economics { s.maybeBlock(ctx); return s.economics }
 func (s *stubSource) Keys(ctx context.Context) Keys           { s.maybeBlock(ctx); return s.keys }
-func (s *stubSource) Config(ctx context.Context) Config       { s.maybeBlock(ctx); return s.config }
-func (s *stubSource) Activity(ctx context.Context) Activity   { s.maybeBlock(ctx); return s.activity }
+func (s *stubSource) Registration(ctx context.Context) Registration {
+	s.maybeBlock(ctx)
+	return s.registration
+}
+func (s *stubSource) Activity(ctx context.Context) Activity { s.maybeBlock(ctx); return s.activity }
 
 func get(t *testing.T, h http.Handler, path string) (*http.Response, string) {
 	t.Helper()
@@ -55,10 +58,10 @@ func get(t *testing.T, h http.Handler, path string) (*http.Response, string) {
 }
 
 func TestEverySectionServesJSON(t *testing.T) {
-	h := Handler(&stubSource{}, NoAuth())
+	h := Handler(&stubSource{})
 	for _, path := range []string{
 		"/api/vitals", "/api/assignments", "/api/economics",
-		"/api/keys", "/api/config", "/api/activity",
+		"/api/keys", "/api/registration", "/api/activity",
 	} {
 		res, body := get(t, h, path)
 		if res.StatusCode != http.StatusOK {
@@ -86,7 +89,7 @@ func TestUnavailableSectionCarriesItsReason(t *testing.T) {
 	src := &stubSource{economics: Economics{
 		Unavailable: Unavailable{Unavailable: true, Reason: "guardian record unavailable: connection refused"},
 	}}
-	res, body := get(t, Handler(src, NoAuth()), "/api/economics")
+	res, body := get(t, Handler(src), "/api/economics")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("an unavailable section is still a successful response: got %d", res.StatusCode)
 	}
@@ -120,7 +123,7 @@ func TestGoldenVitalsShape(t *testing.T) {
 		EventStream:     "websocket (polling fallback)",
 		LastUpdate:      time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC),
 	}}
-	_, body := get(t, Handler(src, NoAuth()), "/api/vitals")
+	_, body := get(t, Handler(src), "/api/vitals")
 
 	var got map[string]any
 	if err := json.Unmarshal([]byte(body), &got); err != nil {
@@ -164,7 +167,7 @@ func TestGoldenAssignmentShape(t *testing.T) {
 		PendingReveal:        []Assignment{},
 		StateCounts:          map[string]int{"needs_reveal": 1},
 	}}
-	_, body := get(t, Handler(src, NoAuth()), "/api/assignments")
+	_, body := get(t, Handler(src), "/api/assignments")
 
 	var got struct {
 		CurrentHeight int64        `json:"current_height"`
@@ -203,7 +206,7 @@ func TestEmptyCollectionsSerialiseAsArrays(t *testing.T) {
 		activity: Activity{Decisions: []ActivityDecision{}, Submissions: []ActivitySubmission{},
 			Settlements: []ActivitySettlement{}},
 	}
-	h := Handler(src, NoAuth())
+	h := Handler(src)
 
 	_, body := get(t, h, "/api/assignments")
 	for _, key := range []string{`"active": []`, `"at_risk": []`, `"pending_reveal": []`} {
@@ -225,7 +228,7 @@ func TestActivityAlwaysStatesTheSinceStartLimit(t *testing.T) {
 		Note:      "Since this process started — a restart clears these.",
 		StartedAt: time.Date(2026, 7, 27, 9, 0, 0, 0, time.UTC),
 	}}
-	_, body := get(t, Handler(src, NoAuth()), "/api/activity")
+	_, body := get(t, Handler(src), "/api/activity")
 	if !strings.Contains(body, "Since this process started") {
 		t.Error("every activity payload must carry the since-start caveat")
 	}
@@ -235,7 +238,7 @@ func TestActivityAlwaysStatesTheSinceStartLimit(t *testing.T) {
 }
 
 func TestPageIsServedFromRoot(t *testing.T) {
-	res, body := get(t, Handler(&stubSource{}, NoAuth()), "/")
+	res, body := get(t, Handler(&stubSource{}), "/")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("the embedded page should serve from /, got %d", res.StatusCode)
 	}
@@ -250,7 +253,7 @@ func TestPageIsServedFromRoot(t *testing.T) {
 }
 
 func TestScriptIsServed(t *testing.T) {
-	res, body := get(t, Handler(&stubSource{}, NoAuth()), "/app.js")
+	res, body := get(t, Handler(&stubSource{}), "/app.js")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("app.js should be served, got %d", res.StatusCode)
 	}
@@ -263,7 +266,7 @@ func TestHandlerBoundsSlowSections(t *testing.T) {
 	// A section that hangs on an unreachable node must not pin the request
 	// forever, or a polling UI stacks requests against a dead endpoint.
 	src := &stubSource{slow: true}
-	h := Handler(src, NoAuth())
+	h := Handler(src)
 
 	done := make(chan struct{})
 	go func() {
@@ -284,11 +287,84 @@ func TestHandlerBoundsSlowSections(t *testing.T) {
 func TestOnlyGETIsRouted(t *testing.T) {
 	// Read-only means read-only: nothing here mutates, so a POST should not
 	// reach a handler at all.
-	h := Handler(&stubSource{}, NoAuth())
+	h := Handler(&stubSource{})
 	req := httptest.NewRequest(http.MethodPost, "/api/vitals", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Result().StatusCode == http.StatusOK {
 		t.Error("POST must not be served by a read-only dashboard")
+	}
+}
+
+// The page carries no credential, so what it may carry at all is the whole
+// defence. This pins the served field names of the two sections that used to
+// leak: a field added to either fails here until someone decides, deliberately,
+// that the chain already publishes it.
+//
+// It is a contract test rather than a value test on purpose. The leak was never
+// a wrong value — it was a field nobody re-examined once it existed.
+func TestServedFieldsStayWithinWhatTheChainPublishes(t *testing.T) {
+	for _, c := range []struct {
+		section string
+		body    any
+		want    []string
+	}{
+		{
+			section: "vitals",
+			body:    Vitals{},
+			want: []string{
+				"unavailable", "guardian_address", "chain_id", "version",
+				"started_at", "uptime", "uptime_seconds", "running", "registered",
+				"accepting_secrets", "healthy", "last_block_height", "chain_height",
+				"height_lag", "event_stream", "polling_interval", "last_update",
+			},
+		},
+		{
+			section: "keys",
+			body:    Keys{},
+			want: []string{
+				"unavailable", "address", "registered_fingerprint",
+				"local_fingerprint", "fingerprints_match", "current_epoch",
+				"epochs", "outgoing_epoch_assignments", "rotation_eligible",
+			},
+		},
+	} {
+		t.Run(c.section, func(t *testing.T) {
+			raw, err := json.Marshal(c.body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got map[string]any
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+
+			allowed := map[string]bool{}
+			for _, k := range c.want {
+				allowed[k] = true
+			}
+			for key := range got {
+				if !allowed[key] {
+					t.Errorf("%s serves %q, which is not in the agreed set — if the chain publishes it, add it to the list; otherwise it does not belong on an unauthenticated page", c.section, key)
+				}
+			}
+		})
+	}
+}
+
+// Named individually because these are the ones that were actually served, and
+// a regression would reintroduce them by these names.
+func TestHostLocalFieldsAreGone(t *testing.T) {
+	h := Handler(&stubSource{})
+	for _, path := range []string{"/api/vitals", "/api/keys", "/api/registration", "/api/activity"} {
+		_, body := get(t, h, path)
+		for _, forbidden := range []string{
+			"config_path", "rpc_endpoint", "grpc_endpoint", "key_path",
+			"encrypted_at_rest", "plaintext_key_warning", "validation_complaint",
+		} {
+			if strings.Contains(body, forbidden) {
+				t.Errorf("%s still serves %q", path, forbidden)
+			}
+		}
 	}
 }

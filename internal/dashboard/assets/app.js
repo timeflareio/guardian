@@ -143,9 +143,6 @@ function renderVitals(d) {
     ['Height lag', d.height_lag, d.height_lag > 2 ? 'stale' : null],
     ['Event stream', d.event_stream],
     ['Polling interval', d.polling_interval],
-    ['RPC', d.rpc_endpoint],
-    ['gRPC', d.grpc_endpoint],
-    ['Config', d.config_path],
     ['Last update', when(d.last_update)],
   ]));
 }
@@ -283,18 +280,16 @@ function renderKeys(d) {
   kb.append(kvList([
     ['Registered key', d.registered_fingerprint],
     ['Local key', d.local_fingerprint],
-    ['Encrypted at rest', d.encrypted_at_rest ? 'yes' : 'NO'],
-    ['Key path', d.key_path],
     ['Address', d.address],
   ]));
   if (!d.fingerprints_match) {
     kb.append(el('p', 'warn',
       'The local key does not match the key registered on chain. Shares encrypted to the registered key cannot be decrypted with this file — reveals will fail.'));
   }
-  if (d.plaintext_key_warning) {
-    kb.append(el('p', 'warn',
-      'The share key is stored in plaintext. Anyone who can read this host can decrypt every share assigned to this guardian.'));
-  }
+  // Whether the key is encrypted at rest is deliberately not shown here: this
+  // page has no credential in front of it, and "this guardian's key is in
+  // plaintext" is a targeting signal. `guardianctl config doctor` answers it on
+  // the host.
 
   rot.replaceChildren();
   rot.append(el('div', 'big', `Epoch ${d.current_epoch}`));
@@ -313,11 +308,11 @@ function renderKeys(d) {
       ]),
     ));
   }
-  rot.append(el('p', 'faint', 'Rotating is a CLI action: guardiand rotate-key.'));
+  rot.append(el('p', 'faint', 'Rotating is a CLI action: guardianctl rotate-key.'));
 }
 
-function renderConfig(d) {
-  const body = $('config-body');
+function renderRegistration(d) {
+  const body = $('registration-body');
   if (handleUnavailable(body, d)) return;
 
   body.replaceChildren();
@@ -326,14 +321,18 @@ function renderConfig(d) {
     ['Available until', d.available_until],
     ['Blocks remaining', d.blocks_remaining],
     ['Fields drifting from chain', d.drift_count, d.drift_count ? 'drift' : 'ok'],
-    ['Config validates', d.validation_ok ? 'yes' : 'no'],
+    ['Config validates', d.config_valid ? 'yes' : 'no'],
   ]));
   if (d.eligibility_warning) {
     body.append(el('p', 'warn', d.eligibility_note ||
       'Availability is short enough to be excluding this guardian from long-dated secrets already.'));
   }
-  if (!d.validation_ok && d.validation_complaint) {
-    body.append(el('p', 'warn', `Config invalid: ${d.validation_complaint}`));
+  if (!d.config_valid) {
+    // The complaint itself stays on the host: validation messages quote the
+    // value that failed, which is how a path or an endpoint would reach a page
+    // that carries neither.
+    body.append(el('p', 'warn',
+      'The local configuration does not validate. Run guardianctl config doctor --config-only on the host for the reason.'));
   }
   const fields = d.fields || [];
   if (fields.length) {
@@ -373,7 +372,7 @@ function renderActivity(d) {
       subs.map((s) => [
         when(s.at), s.kind, s.secret_id,
         { node: chip(s.success ? 'ok' : 'failed', s.success ? 'calm' : 'urgent') },
-        s.tx_hash || (s.error || '—'), s.height || '—',
+        s.tx_hash || '—', s.height || '—',
       ]),
     ));
     sub.append(el('p', 'faint', shownOf(subs.length, d.total_submissions)));
@@ -419,7 +418,7 @@ const SECTIONS = [
   ['assignments', renderAssignments],
   ['economics', renderEconomics],
   ['keys', renderKeys],
-  ['config', renderConfig],
+  ['registration', renderRegistration],
   ['activity', renderActivity],
 ];
 
@@ -427,10 +426,6 @@ async function pollOnce() {
   await Promise.all(SECTIONS.map(async ([name, render]) => {
     try {
       const res = await fetch(`api/${name}`, { cache: 'no-store' });
-      // The browser answers the first 401 itself, by prompting. One that
-      // reaches here is a wrong or withdrawn credential, and it must not read
-      // as a broken daemon — those are different problems with different fixes.
-      if (res.status === 401) throw new Error('not authenticated — reload to sign in again');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       render(await res.json());
     } catch (err) {

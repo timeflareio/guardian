@@ -11,7 +11,6 @@ import (
 	"github.com/timeflareio/guardian/internal/cli/ui"
 	"github.com/timeflareio/guardian/internal/config"
 	"github.com/timeflareio/guardian/internal/custody"
-	"github.com/timeflareio/guardian/internal/dashboard"
 )
 
 // `config init` is the first-run wizard: it writes the configuration file and,
@@ -60,11 +59,7 @@ than prompting for it.`,
     --keyring-dir [/path/to/keyring] \
     --keyring-passphrase [password] \
     --encryption-key-passphrase [password] \
-    --auto-generate-key
-
-  # Set the operator dashboard password too (never taken as a flag value)
-  guardianctl config init --generate-dashboard-password
-  printf '%s' "$DASHBOARD_PASSWORD" | guardianctl config init --dashboard-password-stdin`,
+    --auto-generate-key`,
 		RunE: runConfigInit,
 	}
 
@@ -77,10 +72,6 @@ than prompting for it.`,
 	cmd.Flags().String("keyring-passphrase", "", "keyring passphrase for automated access (stored verbatim in a 0600 file)")
 	cmd.Flags().String("encryption-key-passphrase", "", "passphrase encrypting the generated share key at rest (required with --auto-generate-key; stored verbatim in a 0600 file beside the key, never in the config values)")
 	cmd.Flags().Bool("non-interactive", false, "never prompt: take every value from flags and fail naming any that are missing")
-	// Switches rather than a value: the dashboard password is never taken on the
-	// command line. See collectDashboardPassword.
-	cmd.Flags().Bool("generate-dashboard-password", false, "generate the operator dashboard password, print it once, and store only its bcrypt hash")
-	cmd.Flags().Bool("dashboard-password-stdin", false, "read the operator dashboard password from stdin (for scripts and image builds)")
 
 	return cmd
 }
@@ -96,8 +87,6 @@ type initFlags struct {
 	keyringPassphrase string
 	encKeyPassphrase  string
 	nonInteractive    bool
-	generateDashboard bool
-	dashboardStdin    bool
 }
 
 func readInitFlags(cmd *cobra.Command) initFlags {
@@ -110,8 +99,6 @@ func readInitFlags(cmd *cobra.Command) initFlags {
 	f.keyringPassphrase, _ = cmd.Flags().GetString("keyring-passphrase")
 	f.encKeyPassphrase, _ = cmd.Flags().GetString("encryption-key-passphrase")
 	f.nonInteractive, _ = cmd.Flags().GetBool("non-interactive")
-	f.generateDashboard, _ = cmd.Flags().GetBool("generate-dashboard-password")
-	f.dashboardStdin, _ = cmd.Flags().GetBool("dashboard-password-stdin")
 	return f
 }
 
@@ -177,7 +164,6 @@ type initSettings struct {
 	keyringPassphrase   string
 	guardianAddress     string
 	encryptionPublicKey string
-	dashboardHash       string
 }
 
 func runConfigInit(cmd *cobra.Command, args []string) error {
@@ -228,18 +214,6 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Collected here so a guardian can come out of init with the dashboard
-	// already reachable rather than withheld. It does not replace
-	// `config set-dashboard-password`: init refuses to run against an existing
-	// configuration, so that command remains the only way to rotate the password
-	// or to set one when the dashboard is enabled later.
-	dashboardHash, generatedDashboardPassword, err := collectDashboardPassword(
-		u, flags.generateDashboard, flags.dashboardStdin, interactive)
-	if err != nil {
-		return err
-	}
-	settings.dashboardHash = dashboardHash
-
 	if err := applyInitSettings(manager, settings); err != nil {
 		return err
 	}
@@ -247,7 +221,7 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(err, "failed to initialize config")
 	}
 
-	reportInitSummary(u, manager, configPath, settings, generatedDashboardPassword)
+	reportInitSummary(u, manager, configPath, settings)
 	return nil
 }
 
@@ -465,11 +439,6 @@ func applyInitSettings(manager *config.Manager, s initSettings) error {
 	if s.guardianAddress != "" {
 		values["guardian_address"] = s.guardianAddress
 	}
-	// Only the hash reaches the file; the plaintext is gone by now unless it was
-	// generated, in which case the summary prints it once.
-	if s.dashboardHash != "" {
-		values["dashboard_password_hash"] = s.dashboardHash
-	}
 
 	for key, value := range values {
 		if err := manager.Set(key, value); err != nil {
@@ -494,19 +463,10 @@ func applyInitSettings(manager *config.Manager, s initSettings) error {
 }
 
 // reportInitSummary says what was written and what to do next.
-func reportInitSummary(u *ui.Printer, manager *config.Manager, configPath string, s initSettings, generatedDashboardPassword string) {
+func reportInitSummary(u *ui.Printer, manager *config.Manager, configPath string, s initSettings) {
 	u.EmptyLine()
 	u.Separator("    Configuration Initialized Successfully")
 	u.EmptyLine()
-
-	// First, and never the log: this is the only moment a generated password
-	// exists anywhere. Ahead of the summary so it cannot scroll off behind it.
-	if generatedDashboardPassword != "" {
-		u.Note("Dashboard password (shown once — store it now):")
-		u.Printf("%s\n", generatedDashboardPassword)
-		u.Note("Sign in as user %q.", dashboard.Username)
-		u.EmptyLine()
-	}
 
 	u.Step("📋 Configuration Summary:")
 	u.Text(ui.Indent1 + "📁 Config File:           ")
@@ -532,69 +492,6 @@ func reportInitSummary(u *ui.Printer, manager *config.Manager, configPath string
 	u.Text(ui.Indent1 + "• ")
 	u.Command("guardianctl register")
 	u.TextLn(" - register your guardian with the network\n")
-}
-
-// collectDashboardPassword resolves the dashboard password during init and
-// returns its bcrypt hash, plus the plaintext only when init generated it and
-// therefore has to show it once. An empty hash means no password was set, which
-// is a valid outcome: on loopback the dashboard needs no credential.
-//
-// There is deliberately no --dashboard-password flag to sit beside the keyring
-// and share-key passphrase flags. set-dashboard-password refuses the password as
-// an argument because arguments land in shell history and in ps, and a second
-// door into the same field would undo that. The two switches here mirror its
-// --generate and --stdin instead.
-func collectDashboardPassword(u *ui.Printer, generate, fromStdin, interactive bool) (string, string, error) {
-	if generate && fromStdin {
-		return "", "", errors.New("--generate-dashboard-password and --dashboard-password-stdin are mutually exclusive")
-	}
-
-	var password string
-	var err error
-	switch {
-	case generate:
-		password, err = generatePassword()
-	case fromStdin:
-		password, err = readPasswordFromStdin()
-	case interactive:
-		password, err = promptForDashboardPasswordDuringInit(u)
-	}
-	if err != nil {
-		return "", "", err
-	}
-	if password == "" {
-		return "", "", nil
-	}
-
-	hash, err := config.HashPassword(password)
-	if err != nil {
-		return "", "", err
-	}
-	if generate {
-		return hash, password, nil
-	}
-	return hash, "", nil
-}
-
-// promptForDashboardPasswordDuringInit offers the password without insisting on
-// it. Declining is safe and common — an unset password withholds the dashboard
-// beyond loopback rather than serving it unprotected — so the step names the
-// command that sets one later instead of blocking the wizard. "" means skipped.
-func promptForDashboardPasswordDuringInit(u *ui.Printer) (string, error) {
-	u.EmptyLine()
-	u.Step("🖥️  Step 4: Operator Dashboard Password")
-	u.TextLn(ui.Indent1 + "The dashboard authenticates as user \"" + dashboard.Username + "\". On loopback it is served")
-	u.TextLn(ui.Indent1 + "without a credential; bound beyond loopback it is not served at all until a")
-	u.TextLn(ui.Indent1 + "password is set. Only the bcrypt hash is stored.\n")
-
-	choice := strings.ToLower(strings.TrimSpace(
-		u.PromptInput(ui.Indent1 + "🔀 Set a dashboard password now? [y/N]: ")))
-	if choice != "y" && choice != "yes" {
-		u.Note(ui.Indent1 + "Skipped — set one later with 'guardianctl config set-dashboard-password'.\n")
-		return "", nil
-	}
-
-	return promptForDashboardPassword(u)
 }
 
 // resolveAddressWithPassword resolves the guardian address from the keyring
