@@ -106,10 +106,74 @@ verify-boundaries:
 		echo "$$bad"; exit 1; \
 	fi
 	@echo "✅ Module boundary respected"
+	@$(MAKE) --no-print-directory verify-output-boundary
+
+# internal/cli/ui is the only package that may write to the process's output.
+# Everything else returns a value or an error and lets a caller decide how to
+# say it — which is what makes a command's output assertable in a test, and what
+# stops the daemon's packages printing into a container log by accident.
+#
+# The check is on fmt.Print* rather than on os.Stdout, because that is the form
+# the leak actually takes: a helper that "just prints something" reaches for
+# fmt.Println, not for the file handle. Logging goes through zap, which writes to
+# its own configured sink and is not what this bounds.
+verify-output-boundary:
+	@echo "--> Checking the output boundary..."
+	@bad=$$(grep -rn 'fmt\.Print' --include='*.go' . \
+		| grep -v '^\./internal/cli/ui/' \
+		| grep -v '_test\.go:' || true); \
+	if [ -n "$$bad" ]; then \
+		echo "❌ output written outside internal/cli/ui — route it through a ui.Printer:"; \
+		echo "$$bad"; exit 1; \
+	fi
+	@echo "✅ Output boundary respected"
+	@$(MAKE) --no-print-directory verify-daemon-symbols
+
+# The daemon must carry no code that can mint, export or rewrite key material.
+# That is the whole case for guardiand and guardianctl being separate binaries,
+# and it holds only as long as no verb wanders back — `key backup` seals the
+# entire epoch keyring into one portable file, and the daemon is the component
+# with network-facing surface.
+#
+# Checked on the linked binary rather than on imports, because the property is
+# about what is reachable from main: internal/cli holds both roots, and it is the
+# linker's reachability analysis that keeps the ctl half out of guardiand. An
+# import-graph check could not see that, and a comment could not enforce it.
+#
+# Symbols are matched fully qualified. GenerateKeypair alone appears in
+# third-party dependencies (flynn/noise, pion/dtls) that have nothing to do with
+# share keys, so a bare name would fail every build for the wrong reason.
+DAEMON_FORBIDDEN_SYMBOLS := \
+	github.com/timeflareio/crypto/go.GenerateKeypair \
+	github.com/timeflareio/guardian/internal/custody.SealBundle \
+	github.com/timeflareio/guardian/internal/custody.OpenBundle \
+	github.com/timeflareio/guardian/internal/custody.SaveEncryptedShareKey \
+	github.com/timeflareio/guardian/internal/custody.KeyToMnemonic \
+	github.com/timeflareio/guardian/internal/custody.WritePassphraseFile \
+	'github.com/timeflareio/guardian/internal/config.(*Manager).Save'
+
+verify-daemon-symbols:
+	@echo "--> Checking guardiand cannot write or export key material..."
+	@set -e; \
+	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	go build -o "$$tmp/guardiand" ./cmd/guardiand; \
+	syms=$$(go tool nm "$$tmp/guardiand"); \
+	bad=""; \
+	for sym in $(DAEMON_FORBIDDEN_SYMBOLS); do \
+		if printf '%s\n' "$$syms" | grep -qF "$$sym"; then bad="$$bad $$sym"; fi; \
+	done; \
+	if [ -n "$$bad" ]; then \
+		echo "❌ guardiand links key-writing code:$$bad"; \
+		echo "   The daemon holds the epoch keyring and is the only component with"; \
+		echo "   network-facing surface, so it must carry no path that can seal,"; \
+		echo "   generate or rewrite a key. Move the verb to guardianctl."; \
+		exit 1; \
+	fi; \
+	echo "✅ guardiand carries no key-writing code"
 
 # Combined quality checks (read-only mode)
 # go-govulncheck runs separately (advisory) — see the verify target note.
 go-quality-check: go-format-check go-lint-check go-vet
 	@echo "🎉 All code quality checks passed!"
 
-.PHONY: go-format go-lint go-imports go-imports-check go-vet go-govulncheck go-format-check go-lint-check go-quality-check verify-boundaries
+.PHONY: go-format go-lint go-imports go-imports-check go-vet go-govulncheck go-format-check go-lint-check go-quality-check verify-boundaries verify-output-boundary verify-daemon-symbols

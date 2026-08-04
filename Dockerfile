@@ -1,4 +1,4 @@
-# guardiand — guardian daemon image
+# guardiand + guardianctl — guardian image
 #
 # The build context is THIS repository's root. It no longer needs the monorepo
 # root: guardian consumes the wire contract and the crypto primitives as pinned
@@ -27,7 +27,9 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath \
-    -o /out/guardiand ./cmd/guardiand
+    -o /out/guardiand ./cmd/guardiand && \
+    CGO_ENABLED=0 go build -trimpath \
+    -o /out/guardianctl ./cmd/guardianctl
 
 FROM gcr.io/distroless/static-debian12:nonroot
 ARG VERSION=dev
@@ -37,7 +39,20 @@ LABEL org.opencontainers.image.title="guardiand" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${COMMIT}"
 
+# Both binaries ship. guardiand is the entrypoint; guardianctl is reached with
+# `docker run --entrypoint guardianctl …` and holds every verb that can write or
+# export key material — registration, backup, restore and rotation all have to be
+# runnable on the host that holds the keys.
+#
+# Shipping it here does not weaken the property the split exists for. That
+# property is about what is linked into the long-running process: guardiand has
+# no code path that can seal or generate a key, so a compromise of its
+# network-facing surface — the dashboard listener, the event subscription —
+# cannot reach one. Anything able to start a second process in this container
+# already holds Docker-socket access and could read the mounted key files
+# directly, so guardianctl's presence on the filesystem adds nothing to it.
 COPY --from=build /out/guardiand /usr/local/bin/guardiand
+COPY --from=build /out/guardianctl /usr/local/bin/guardianctl
 
 # health, metrics
 EXPOSE 21000 21100

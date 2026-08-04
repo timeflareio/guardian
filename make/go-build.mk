@@ -5,6 +5,11 @@
 OUTPUT_DIR ?= bin
 CMD_PATH ?= ./cmd/$(APPNAME)
 
+# Every binary this module ships. APPNAME stays the daemon, because it is what
+# `make status` and the help text talk about; BINARIES is what actually gets
+# built, so a new binary is added in one place.
+BINARIES ?= guardiand guardianctl
+
 # Verify module dependencies have not been modified
 go-verify-deps:
 	@go mod verify >/dev/null
@@ -12,14 +17,18 @@ go-verify-deps:
 
 # Install binary to GOPATH/bin
 go-install: go-verify-deps
-	@echo "--> installing $(APPNAME)"
-	@go install $(BUILD_FLAGS) -mod=readonly $(CMD_PATH)
+	@for b in $(BINARIES); do \
+		echo "--> installing $$b"; \
+		go install $(BUILD_FLAGS) -mod=readonly ./cmd/$$b || exit 1; \
+	done
 
 # Build binary without installing
 go-build-binary: go-verify-deps
-	@echo "--> building $(APPNAME) binary"
 	@mkdir -p $(OUTPUT_DIR)
-	@go build $(BUILD_FLAGS) -mod=readonly -o $(OUTPUT_DIR)/$(APPNAME) $(CMD_PATH)
+	@for b in $(BINARIES); do \
+		echo "--> building $$b"; \
+		go build $(BUILD_FLAGS) -mod=readonly -o $(OUTPUT_DIR)/$$b ./cmd/$$b || exit 1; \
+	done
 
 # Module cleanup and verification
 mod-clean:
