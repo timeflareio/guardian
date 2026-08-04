@@ -11,9 +11,12 @@ finding 22 and its `chain_id` docs item; the chain's network registry
 owner, 4 August 2026.
 **Components**: `internal/config/networks.go` (new file, existing package),
 `internal/config/config.go`, `internal/cli/config_init.go`,
-`internal/cli/config_init_test.go`, a new `internal/config/networks_test.go`,
-`docs/guides/` operator setup text, `CLAUDE.md`; and in the chain repository,
-`devnet/guardians.sh` and `devnet/docker/init-guardians.sh`.
+`internal/chain/client.go`, `internal/cli/key.go`,
+`internal/cli/config_init_test.go`, `internal/config/config_test.go`, a new
+`internal/config/networks_test.go`, `docs/guides/` operator setup text,
+`CLAUDE.md`, [PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md);
+and in the chain repository, `devnet/guardians.sh` and
+`devnet/docker/init-guardians.sh`.
 
 ---
 
@@ -69,11 +72,15 @@ not answer would be handed to consumers as a default.
 chosen values into the configuration file.** Nothing else changes.
 
 That last sentence is the whole shape of it. The registry is consulted once, by
-`guardianctl`, at setup. The daemon continues to read `chain_id`,
-`rpc_endpoint` and `grpc_endpoint` from its configuration exactly as it does
-now — `internal/chain/client.go`, the event monitor and the signer are untouched,
-and no code outside `guardianctl config init` learns that a registry exists. A
-guardian already configured is unaffected; there is no migration.
+`guardianctl`, at setup, and **no code outside `guardianctl config init` knows a
+registry exists**. The daemon reads `chain_id`, `rpc_endpoint` and `grpc_endpoint`
+from its configuration, as it does today; a guardian already configured is
+unaffected, and there is no migration.
+
+The one place the daemon does change is the dialler, and only because a network
+that is not loopback needs TLS before it can be reached at all — see "Reaching a
+network that is not loopback". That reads a configuration field like any other; it
+does not reach for the registry.
 
 ### Where the list is read from
 
@@ -177,12 +184,18 @@ option that drops through to typing the three fields by hand. That option is the
 guardian's own and never the chain's: a private node, or a network the published
 list does not carry, must always remain reachable.
 
+A hand-typed endpoint gets no `grpc_tls` inference, because nothing in the
+configuration says whether that host terminates TLS. It keeps the default, and the
+transport-security plan's warning phase is what tells an operator who typed a
+remote host that their link is in clear — which is why that phase stays with that
+plan rather than coming here.
+
 It follows the shape the wizard already uses for the encryption key
 (`collectEncryptionKey`): a `collectNetwork` function that *returns* the values
 and writes nothing, with `applyInitSettings` remaining the single place the
-configuration is touched. `initSettings` gains `chainID`, `rpcEndpoint` and
-`grpcEndpoint`; `applyInitSettings` writes them when non-empty, so declining
-selection leaves the compiled defaults exactly as today.
+configuration is touched. `initSettings` gains `chainID`, `rpcEndpoint`,
+`grpcEndpoint` and `grpcTLS`; `applyInitSettings` writes the endpoints when
+non-empty, so an operator who declines selection keeps the compiled defaults.
 
 ### Unattended runs
 
@@ -197,9 +210,47 @@ registry decides what an unnamed network means, rather than whatever literals th
 binary was compiled with — which is the point of consulting it at all, and it
 closes finding 22 on the scripted path as well as the interactive one.
 
-The compiled defaults in `DefaultConfig()` therefore stop being what an unattended
-setup lands on. They remain only as the values a configuration file carries before
-anything sets them, and as the interactive manual-path starting point.
+The compiled defaults in `DefaultConfig()` serve a narrower purpose: they are what
+a configuration carries before anything sets it, and the starting point for the
+interactive manual path.
+
+### Reaching a network that is not loopback
+
+A selected network has to be dialable, and today only a loopback one is.
+`internal/chain/client.go:41` and `internal/cli/key.go:440` both dial with
+`insecure.NewCredentials()`, which is not lax verification: it is cleartext h2c,
+and no TLS handshake is ever attempted. A registry entry for a public network
+carries `grpc.<host>:443`, where the server waits for a ClientHello and receives
+the HTTP/2 connection preface instead, so the connection never establishes — and
+because `grpc.NewClient` dials lazily, that surfaces at the first query rather
+than at startup, after `guardiand start` has reported itself healthy.
+
+So this plan carries **Phase 1 of
+[PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md)**:
+the `grpc_tls`, `grpc_tls_ca_file` and `grpc_tls_insecure_skip_verify` keys, with
+credentials selected from them by **one helper shared** by `NewClient` and the
+`key.go` call site — that plan's open question 4, answered yes, because two places
+deciding transport security is precisely the duplication that leaves one of them
+behind. Its design is adopted unchanged rather than restated; the reason it lands
+here is that network selection is what populates it, and selection producing a
+configuration the daemon cannot dial is not worth shipping.
+
+**Selection sets `grpc_tls` from the entry's `local` field.** `local: true` gives
+plaintext, which is what the devnet needs and the only place `NETWORKS.md` permits
+cleartext; anything else gives TLS against the system root pool. The operator
+therefore never has to know the key exists, and the explicit boolean that plan
+wants — rather than a scheme parsed out of the endpoint, its open question 3 —
+is exactly what a selection step can fill in.
+
+The default stays plaintext for a configuration nobody selected into, so every
+colocated deployment and the devnet are untouched. That answers that plan's open
+question 1 for the case that matters: the safer setting arrives with the network
+that needs it, instead of being a default that breaks every local setup.
+
+The RPC leg needs nothing here. `internal/guardian/events.go:65` uses
+`rpchttp.New`, which honours the `https://` and `wss://` URLs a non-local entry
+publishes, verifying against the system pool. A private CA reaching the event
+monitor stays that plan's Phase 3.
 
 ### What the daemon still needs to check
 
@@ -264,35 +315,52 @@ runs at a materially different rate.
    `default` naming nothing; empty `networks`; missing fields; unknown fields
    accepted), and fetch against `httptest` for success, non-200, malformed body
    and timeout.
-3. **`collectNetwork` in `internal/cli/config_init.go`** — the Step 1 prompt,
+3. **The gRPC TLS keys** — `grpc_tls`, `grpc_tls_ca_file` and
+   `grpc_tls_insecure_skip_verify` on `Config`, and one credential-construction
+   helper used by both `internal/chain/client.go:41` and
+   `internal/cli/key.go:440`. Adopted from the transport-security plan's Phase 1;
+   its remaining phases are unaffected. Ahead of the wizard phase, so selection
+   has a field to write.
+4. **`collectNetwork` in `internal/cli/config_init.go`** — the Step 1 prompt,
    the `--network` flag in `initFlags`/`readInitFlags`, the unselectable-network
    presentation, the custom fallback, and the renumbering of Steps 2–5.
-   `initSettings` and `applyInitSettings` gain the three fields.
-4. **`internal/cli/config_init_test.go`** — selection writes all three fields;
-   `--network` with an unknown id fails naming the available ids; a failed fetch
-   completes interactively with the defaults intact and fails unattended;
-   `--non-interactive` with no `--network` lands on the list's `default`.
-5. **`DefaultConfig()` derives `denom` and `gas_price` from `secretstypes`** —
+   `initSettings` and `applyInitSettings` gain the four fields, with `grpc_tls`
+   derived from the entry's `local`.
+5. **`internal/cli/config_init_test.go`** — selection writes all four fields;
+   a `local: false` entry sets `grpc_tls`; `--network` with an unknown id fails
+   naming the available ids; a failed fetch completes interactively with the
+   defaults intact and fails unattended; `--non-interactive` with no `--network`
+   lands on the list's `default`.
+6. **`DefaultConfig()` derives `denom` and `gas_price` from `secretstypes`** —
    the gas floor expression factored out of `internal/chain/signer.go:68-69` so
    both callers read one definition.
-6. **The chain's devnet scripts** — `devnet/guardians.sh` and
+7. **The chain's devnet scripts** — `devnet/guardians.sh` and
    `devnet/docker/init-guardians.sh` set `GUARDIAN_NETWORK_LIST_URL` to the chain
    checkout's own `networks.json`, so `dev-up` and the e2e suites exercise
    selection without reaching GitHub. A separate change in the chain repository,
    landing after the guardian release that understands the variable.
-7. **Docs** — the operator setup guide gains the selection step; `CLAUDE.md`
-   gains a line stating that the network registry is read at `config init` only
-   and that the daemon's source of truth remains its configuration file.
+8. **Docs and the transport plan** — the operator setup guide gains the selection
+   step; `CLAUDE.md` gains a line stating that the network registry is read at
+   `config init` only and that the daemon's source of truth remains its
+   configuration file; and
+   [PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md)
+   is rewritten to open at its warning phase, with its open questions 1, 3 and 4
+   settled and its component list reduced to what it still owns.
 
 ## What this plan does not solve
 
-- **It does not make a public network usable.** `internal/chain/client.go:41`
-  dials unconditionally with `insecure.NewCredentials()`. A registry entry for a
-  public network carries `grpc.<host>:443`, which this client would attempt in
-  cleartext. Only the devnet exists in the registry today so nothing breaks now,
-  but the first testnet row is exactly the moment this bites, and it is owned by
-  [PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md)
-  and its `grpc_tls` work — not by this plan. See open question 1.
+- **It does not complete the transport posture.** TLS with the system pool is
+  where this stops. No certificate pinning, no mTLS, no warning when a hand-typed
+  non-loopback endpoint is left plaintext, no private CA reaching the event
+  monitor, and no fix for the host-blind port-collision check — all still
+  [PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md)'s,
+  which this plan reduces rather than replaces.
+- **TLS does not make the node trustworthy.** An authenticated channel to a
+  hostile node is still a channel to a hostile node. The bounds on that are the
+  gas ceiling and the chain-id assertion in
+  [PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md](PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md),
+  and both matter more once endpoints arrive from a published list rather than
+  from the operator.
 - **It does not make `block_time` per-network.** It stays at 6s in
   `DefaultConfig()`, which is the devnet's rate. A testnet running materially
   faster or slower would need it set by hand, affecting display maths and derived
@@ -311,29 +379,20 @@ runs at a materially different rate.
 
 ## Open questions
 
-1. **Does the minimal gRPC TLS change land in this plan or its own?**
-   `internal/chain/client.go:41` and `internal/cli/key.go:440` both dial with
-   `insecure.NewCredentials()`, which is not lax verification but cleartext h2c —
-   no TLS handshake is ever attempted. A registry entry for a public network
-   carries `grpc.<host>:443`, where the server waits for a ClientHello and
-   receives the HTTP/2 preface instead, so the connection never establishes; and
-   because `grpc.NewClient` is lazy, that surfaces at the first query rather than
-   at startup. The RPC side is unaffected — `internal/guardian/events.go:65` uses
-   `rpchttp.New`, which honours `https://` and `wss://`.
+1. **Is a non-local network's gRPC endpoint guaranteed to be TLS-terminated?**
+   Deriving `grpc_tls` from `local` assumes it is, and the registry does not say
+   so. `make verify-networks` requires `https` for the `rpc` and `rest` URLs of a
+   non-local entry, but `grpc` is a bare `host:port` with no scheme to check, so a
+   public network could publish a plaintext gRPC host and selection would set TLS
+   against it. The dial would then fail until an operator set `grpc_tls false` —
+   which is the right direction to fail in, but it is an inference this plan is
+   making rather than a fact the registry states.
 
-   So until credentials are chosen from the endpoint rather than hardcoded, this
-   plan can offer a public network but the daemon cannot reach one. Only the
-   devnet exists in the registry today, so nothing breaks yet; the first testnet
-   row is the moment it does.
-
-   Recommendation: fold the minimal version in — pick TLS credentials when the
-   endpoint is not loopback — and leave
-   [PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md)
-   owning the full posture including how `grpc_endpoint` is spelled and pinned.
-   Selection that produces an unusable configuration is not worth shipping on its
-   own. The alternative — keep them separate and have this plan refuse or warn on
-   `local: false` entries — is cleaner ownership but means network selection is
-   devnet-only until that plan lands.
+   Recommendation: ask the chain owner to have `verify-networks` require a
+   non-local `grpc` entry to be TLS-terminated, matching the rule already enforced
+   on `rpc` and `rest`. That makes the inference a published guarantee and needs no
+   change here. Carrying an explicit per-entry flag instead would work, but it
+   states in the registry something the existing loopback rule already implies.
 2. **Should the chosen network's `id` be recorded in the configuration?**
    Recommendation: not in this pass. A `network` key would let `config doctor`
    report when the three fields have drifted from the entry they came from, and
