@@ -2,9 +2,7 @@ package guardian
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
@@ -143,7 +141,7 @@ func (srs *ShareRevealService) processConfirmation(ctx context.Context,
 func (srs *ShareRevealService) ProcessReveal(ctx context.Context,
 	secret *chain.Secret, assignment *chain.GuardianAssignment, currentHeight int64) error {
 
-	// 1. Check reveal timing (window bounds + anti-coordination offset)
+	// 1. Check reveal timing (window bounds)
 	if !srs.shouldRevealNow(secret, currentHeight) {
 		return nil // Not time to reveal yet
 	}
@@ -222,12 +220,10 @@ func (srs *ShareRevealService) processReveal(ctx context.Context,
 func (srs *ShareRevealService) validateShareIntegrity(
 	secret *chain.Secret, assignment *chain.GuardianAssignment, share []byte) error {
 
-	if !srs.config.EnableHMACValidation {
-		srs.logger.Debug("HMAC validation disabled, skipping",
-			zap.String("secret_id", secret.ID))
-		return nil
-	}
-
+	// The chain verifies this same HMAC when it accepts MsgGuardianRevealShare,
+	// and a share that fails it is a protocol violation the guardian is slashed
+	// for. Checking first is the guardian's own protection, which is why it is
+	// unconditional.
 	if len(assignment.ShareHMAC) == 0 {
 		return fmt.Errorf("no HMAC provided for share validation")
 	}
@@ -254,9 +250,15 @@ func (srs *ShareRevealService) validateShareIntegrity(
 }
 
 // shouldRevealNow determines if it's time to reveal the share.
+//
+// The window is the only gate: a share goes out as soon as it opens. The spec
+// states that guardians may submit "at any time without coordination
+// restrictions", relying on economic incentives rather than timing, so there is
+// nothing to stagger for — and any delay would spend the margin that retries
+// need before the window closes.
 func (srs *ShareRevealService) shouldRevealNow(secret *chain.Secret, currentHeight int64) bool {
-	if currentHeight < srs.plannedRevealHeight(secret) {
-		return false // Too early (window not open, or our anti-coordination offset not reached)
+	if currentHeight < secret.RevealStartBlock {
+		return false // Window not open yet
 	}
 
 	// The chain's window is [start, end] — BOTH bounds inclusive. A reveal in
@@ -270,29 +272,6 @@ func (srs *ShareRevealService) shouldRevealNow(secret *chain.Secret, currentHeig
 	}
 
 	return true
-}
-
-// plannedRevealHeight is window-open plus this guardian's anti-coordination
-// offset: a deterministic pseudo-random 0..reveal_offset_blocks delay derived
-// from (secret, guardian), capped so the retry budget still fits before the
-// window closes. With reveal_offset_blocks = 0 (the default) reveals fire at
-// window-open exactly.
-func (srs *ShareRevealService) plannedRevealHeight(secret *chain.Secret) int64 {
-	offset := srs.config.RevealOffsetBlocks
-	if offset <= 0 {
-		return secret.RevealStartBlock
-	}
-
-	h := sha256.Sum256([]byte(secret.ID + "|" + srs.guardianAddress))
-	jitter := int64(binary.BigEndian.Uint64(h[:8]) % uint64(offset+1)) //nolint:gosec // deterministic jitter, not crypto
-
-	planned := secret.RevealStartBlock + jitter
-	// Leave at least half the window after the planned height for retries.
-	latest := secret.RevealStartBlock + (secret.RevealEndBlock-secret.RevealStartBlock)/2
-	if planned > latest {
-		planned = latest
-	}
-	return planned
 }
 
 // decryptShare decrypts an encrypted share with the key of the epoch in

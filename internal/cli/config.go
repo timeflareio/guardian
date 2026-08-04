@@ -10,12 +10,6 @@ import (
 	"github.com/timeflareio/guardian/internal/config"
 )
 
-// ensureGuardianDirectory creates the guardian directory if it doesn't exist
-func ensureGuardianDirectory(manager *config.Manager) error {
-	// Use the config manager to get the correct key directory
-	return manager.EnsureDirectoriesExist()
-}
-
 // showNoConfigMessage displays a consistent "no configuration found" message
 func showNoConfigMessage(u *ui.Printer, configPath string) {
 	u.EmptyLine()
@@ -49,6 +43,10 @@ func NewConfigCmd() *cobra.Command {
 
 Configuration is stored in ~/.timeflare/guardian/config.yaml by default.
 Use --config-path to specify a different location.`,
+		// Without this a mistyped subcommand is swallowed as an argument and
+		// answered with the help text and exit zero, which in a script is
+		// indistinguishable from having run.
+		Args: cobra.NoArgs,
 		RunE: runConfigHelp,
 	}
 
@@ -57,11 +55,9 @@ Use --config-path to specify a different location.`,
 	cmd.AddCommand(NewConfigSetCmd())
 	cmd.AddCommand(NewConfigGetCmd())
 	cmd.AddCommand(NewConfigListCmd())
-	cmd.AddCommand(NewConfigValidateCmd())
 	cmd.AddCommand(NewConfigDoctorCmd())
 	cmd.AddCommand(NewConfigCreateEncryptionKeyCmd())
 	cmd.AddCommand(NewConfigMigrateKeyCmd())
-	cmd.AddCommand(NewConfigSetDashboardPasswordCmd())
 
 	return cmd
 }
@@ -158,25 +154,6 @@ func NewConfigListCmd() *cobra.Command {
 	return cmd
 }
 
-// NewConfigValidateCmd creates the config validate command
-func NewConfigValidateCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "validate",
-		Short: "Validate configuration",
-		Long: `Validate the current configuration for completeness and correctness.
-
-This checks:
-- All required fields are present
-- Values are in correct format
-- Guardian key exists in timeflared keyring (if possible)`,
-		Example: `  # Validate current configuration
-  guardianctl config validate`,
-		RunE: runConfigValidate,
-	}
-
-	return cmd
-}
-
 func runConfigSet(cmd *cobra.Command, args []string) error {
 	u := printer(cmd)
 	key := args[0]
@@ -233,90 +210,36 @@ func runConfigList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get grouped configuration
-	groups := manager.ListAllGrouped()
+	groups := orderedConfigGroups(manager)
 
-	// Print header
 	u.Header("Guardian Configuration")
 	u.Text("Config file: ")
 	u.Path("%s\n\n", manager.GetConfigPath())
 
-	// Define group order for consistent display
-	groupOrder := []string{
-		"Network Configuration",
-		"Guardian Identity & Keys",
-		"Staking & Economics",
-		"Networking & Timeouts",
-		"Guardian Service",
-		"Registration Defaults",
-		"Blockchain Integration",
-		"Monitoring & Observability",
-		"File Paths & Storage",
-		"Performance",
-		"Operational",
+	// Column widths come from the data rather than from guessed constants, so a
+	// key longer than expected cannot shift its row out of alignment. Padding
+	// inside the coloured write is what avoids measuring a string with escape
+	// codes in it.
+	keyWidth, valueWidth := 0, 0
+	for _, group := range groups {
+		for _, key := range group.Keys {
+			keyWidth = max(keyWidth, len(key))
+			valueWidth = max(valueWidth, len(listValue(group.Items[key].Value)))
+		}
 	}
 
-	for i, groupName := range groupOrder {
-		group, exists := groups[groupName]
-		if !exists || len(group) == 0 {
-			continue
-		}
-
-		// Print group header
-		u.Header("▶ %s", groupName)
-
-		// Sort keys within group for consistent display
-		var keys []string
-		for key := range group {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-
-		// Print each configuration item
-		for _, key := range keys {
-			item := group[key]
-			value := item.Value
-
-			// Format empty values nicely - we'll handle this inline
-
-			// Truncate very long values for display
-			displayValue := value
-			if len(value) > 60 {
-				displayValue = value[:57] + "..."
-			}
-
-			// Calculate actual display length (without color codes)
-			actualLen := 2 + 25 + 3 + len(ui.StripANSI(displayValue)) // "  " + key + " = " + value
-
-			// Print key-value pair with indentation
+	for i, group := range groups {
+		u.Header("▶ %s", group.Name)
+		for _, key := range group.Keys {
+			item := group.Items[key]
 			u.Text("  ")
-			u.Key("%-25s", key)
+			u.Key("%-*s", keyWidth, key)
 			u.Text(" = ")
-			if value == "" {
-				u.Text("(empty)")
-			} else {
-				u.Value("%s", displayValue)
-			}
-
-			// Add description aligned at column 90
-			targetCol := 90
-			if actualLen < targetCol {
-				spaces := targetCol - actualLen
-				u.Printf("%*s", spaces, "")
-			} else {
-				u.Text("  ")
-			}
-
-			descText := strings.ToLower(item.Description)
-			if len(descText) > 70 {
-				descText = descText[:67] + "..."
-			}
-			u.Printf("# %s", descText)
-			u.EmptyLine()
+			u.Value("%-*s", valueWidth, listValue(item.Value))
+			u.Printf("  # %s\n", strings.ToLower(item.Description))
 		}
-
 		// Add spacing between groups (except for last group)
-		if i < len(groupOrder)-1 {
+		if i < len(groups)-1 {
 			u.EmptyLine()
 		}
 	}
@@ -327,20 +250,41 @@ func runConfigList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runConfigValidate(cmd *cobra.Command, args []string) error {
-	u := printer(cmd)
-	// Use the global config manager (respects --config-path flag)
-	// Load current config - require file to exist
-	manager, _, err := requireConfig(cmd)
-	if err != nil {
-		return err
-	}
+// configGroup is one section of the configuration, ready to render: the group's
+// name, its keys in display order, and the items behind them.
+type configGroup struct {
+	Name  string
+	Keys  []string
+	Items map[string]config.ConfigItem
+}
 
-	// Validate config
-	if err := manager.Validate(); err != nil {
-		return errors.Wrap(err, "configuration validation failed")
+// orderedConfigGroups walks the configuration in the registry's own group order
+// with each group's keys sorted. Both `config list` and `config doctor` render
+// from this, so a group or field added to the registry reaches both without
+// either being touched, and neither can carry a stale copy of the group names.
+func orderedConfigGroups(manager *config.Manager) []configGroup {
+	grouped := manager.ListAllGrouped()
+	groups := make([]configGroup, 0, len(grouped))
+	for _, name := range config.GroupOrder() {
+		items := grouped[name]
+		if len(items) == 0 {
+			continue
+		}
+		keys := make([]string, 0, len(items))
+		for key := range items {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		groups = append(groups, configGroup{Name: name, Keys: keys, Items: items})
 	}
+	return groups
+}
 
-	u.TextLn("Configuration is valid ✓\n")
-	return nil
+// listValue is how a value reads in the listing: an unset one says so rather
+// than leaving the column blank.
+func listValue(value string) string {
+	if value == "" {
+		return "(empty)"
+	}
+	return value
 }

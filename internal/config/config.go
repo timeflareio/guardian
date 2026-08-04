@@ -66,7 +66,7 @@ type Config struct {
 	Denom            string  `config:"denom" group:"Economics" desc:"Base denomination for the network"`
 	GasPrice         string  `config:"gas_price" group:"Economics" desc:"Gas price for transactions (e.g. 0.1uveil)"`
 	GasAdjustment    float64 `config:"gas_adjustment" group:"Economics" desc:"Gas adjustment multiplier applied to simulation results"`
-	StakeAmount      string  `config:"stake_amount" group:"Economics" desc:"Default float deposit for 'guardiand register' (flag-overridable)"`
+	StakeAmount      string  `config:"stake_amount" group:"Economics" desc:"Default float deposit for 'guardianctl register' (flag-overridable)"`
 	FeeBufferPercent int     `config:"fee_buffer_percent" group:"Economics" desc:"Balance headroom (percent of deposit) required beyond the deposit for fees"`
 
 	// Chain interaction
@@ -79,7 +79,6 @@ type Config struct {
 	PollingInterval      time.Duration `config:"polling_interval" group:"Service" desc:"Fallback poll rate (primary discovery is event-driven when enabled)"`
 	MaxConcurrentSecrets int           `config:"max_concurrent_secrets" group:"Service" desc:"Maximum number of concurrent secret assignments"`
 	MaxParallelReveals   int           `config:"max_parallel_reveals" group:"Service" desc:"Bounded parallelism for reveal submissions in one pass"`
-	EnableHMACValidation bool          `config:"enable_hmac_validation" group:"Service" desc:"Enable HMAC validation for secret shares"`
 	CacheMaxAge          time.Duration `config:"cache_max_age" group:"Service" desc:"Maximum age before a cached secret is evicted"`
 	CacheCleanupInterval int64         `config:"cache_cleanup_interval" group:"Service" desc:"How often (in blocks) the secret cache runs cleanup"`
 	ShutdownTimeout      time.Duration `config:"shutdown_timeout" group:"Service" desc:"Grace period for clean shutdown of all services"`
@@ -87,7 +86,6 @@ type Config struct {
 	// Event-driven operation
 	EnableEventMonitoring bool          `config:"enable_event_monitoring" group:"Event Monitoring" desc:"React to chain events over WebSocket (polling remains the fallback)"`
 	EventReconnectBackoff time.Duration `config:"event_reconnect_backoff" group:"Event Monitoring" desc:"Backoff before reconnecting a dropped event subscription"`
-	RevealOffsetBlocks    int64         `config:"reveal_offset_blocks" group:"Event Monitoring" desc:"Max random block offset after window-open before revealing (0 = reveal immediately)"`
 
 	// Monitoring & observability
 	BindAddress   string `config:"bind_address" group:"Monitoring" desc:"Bind address for the metrics and health listeners"`
@@ -97,34 +95,22 @@ type Config struct {
 	// Dashboard: the operator's read-only page, on the shared BindAddress
 	// alongside health and metrics.
 	//
-	// The page names bond exposure, key fingerprints, the encrypted-at-rest
-	// status (including the plaintext-key warning) and the full config, so
-	// beyond loopback it needs a credential: dashboard_password_hash holds a
-	// bcrypt hash and the dashboard is not served without one on a non-loopback
-	// bind address. The hash is not a secret — a leaked config file yields an
-	// offline attack against it, which is why 'set-dashboard-password
-	// --generate' exists.
+	// It carries no credential and no TLS of its own, which is a constraint on
+	// what it may render rather than an omission. The page shows only what the
+	// chain already publishes about this guardian — address, assignments, bonds,
+	// key fingerprints, epochs — plus liveness. Nothing host-local reaches it:
+	// no filesystem paths, no endpoints, no key custody posture. That last one
+	// matters most, since whether the share key is encrypted at rest names the
+	// guardians worth attacking.
 	//
-	// The rule keys off the bind address, which under Docker is not a proxy for
-	// exposure: a container binds 0.0.0.0 for -p to publish anything, and the
-	// daemon cannot see what was published. Erring towards an unserved page is
-	// the deliberate choice — the alternative is an operator-asserted "not
-	// exposed" flag that can be set once and forgotten.
-	EnableDashboard bool `config:"enable_dashboard" group:"Monitoring" desc:"Serve the read-only operator dashboard (needs dashboard_password_hash beyond loopback)"`
-	DashboardPort   int  `config:"dashboard_port" group:"Monitoring" desc:"Operator dashboard port"`
-	// Displayed as set/not set rather than as the hash itself: a 60-character
-	// blob in an operator's config report is noise, not a disclosure risk.
-	DashboardPasswordHash string `config:"dashboard_password_hash" group:"Monitoring" desc:"bcrypt hash of the dashboard password (set it with 'guardiand config set-dashboard-password')" display:"presence"`
-	// TLS for the dashboard listener alone; health and metrics are unaffected.
-	// Both or neither. Without it Basic auth defends against unauthorised
-	// readers but not against a network eavesdropper — base64 is not
-	// encryption, and the credential crosses the network on every poll.
-	DashboardTLSCertFile string `config:"dashboard_tls_cert_file" group:"Monitoring" desc:"PEM certificate serving the dashboard over TLS (with dashboard_tls_key_file)" path:"true"`
-	DashboardTLSKeyFile  string `config:"dashboard_tls_key_file" group:"Monitoring" desc:"PEM private key serving the dashboard over TLS (with dashboard_tls_cert_file)" path:"true"`
-	EnableHealthCheck    bool   `config:"enable_health_check" group:"Monitoring" desc:"Serve the health/readiness endpoints"`
-	LogLevel             string `config:"log_level" group:"Monitoring" desc:"Logging level (debug, info, warn, error)"`
-	LogFormat            string `config:"log_format" group:"Monitoring" desc:"Log output format (console, json)"`
-	LogFilePath          string `config:"log_file_path" group:"Monitoring" desc:"Log file path (empty = stderr)" path:"true"`
+	// Anything added here that a chain query could not already answer needs that
+	// rule revisited first, not a credential put in front of it.
+	EnableDashboard   bool   `config:"enable_dashboard" group:"Monitoring" desc:"Serve the read-only operator dashboard"`
+	DashboardPort     int    `config:"dashboard_port" group:"Monitoring" desc:"Operator dashboard port"`
+	EnableHealthCheck bool   `config:"enable_health_check" group:"Monitoring" desc:"Serve the health/readiness endpoints"`
+	LogLevel          string `config:"log_level" group:"Monitoring" desc:"Logging level (debug, info, warn, error)"`
+	LogFormat         string `config:"log_format" group:"Monitoring" desc:"Log output format (console, json)"`
+	LogFilePath       string `config:"log_file_path" group:"Monitoring" desc:"Log file path (empty = stderr)" path:"true"`
 
 	// Lazy loading state (not serialised). Held behind a pointer so Config
 	// values can be copied (Manager.GetConfig) while sharing one key cache.
@@ -175,14 +161,12 @@ func DefaultConfig() *Config {
 		PollingInterval:      6 * time.Second,
 		MaxConcurrentSecrets: 100,
 		MaxParallelReveals:   4,
-		EnableHMACValidation: true,
 		CacheMaxAge:          7 * 24 * time.Hour,
 		CacheCleanupInterval: 50,
 		ShutdownTimeout:      30 * time.Second,
 
 		EnableEventMonitoring: true,
 		EventReconnectBackoff: 5 * time.Second,
-		RevealOffsetBlocks:    0,
 
 		BindAddress: "0.0.0.0",
 		// 21000/21100 rather than the conventional 8080/9100: 9100 is
@@ -193,20 +177,15 @@ func DefaultConfig() *Config {
 		// so a collision can never be a random one, and outside Kubernetes'
 		// 30000–32767 NodePort range. The devnet fans out from the same bases
 		// (guardian i takes 21000+i / 21100+i — devnet/guardians.sh).
-		MetricsPort:     21100,
-		HealthPort:      21000,
-		EnableMetrics:   true,
-		EnableDashboard: true,
-		DashboardPort:   21200,
-		// Empty by default, so a guardian binding beyond loopback does not
-		// serve the dashboard until an operator sets a credential.
-		DashboardPasswordHash: "",
-		DashboardTLSCertFile:  "",
-		DashboardTLSKeyFile:   "",
-		EnableHealthCheck:     true,
-		LogLevel:              "info",
-		LogFormat:             "console",
-		LogFilePath:           "",
+		MetricsPort:       21100,
+		HealthPort:        21000,
+		EnableMetrics:     true,
+		EnableDashboard:   true,
+		DashboardPort:     21200,
+		EnableHealthCheck: true,
+		LogLevel:          "info",
+		LogFormat:         "console",
+		LogFilePath:       "",
 	}
 }
 
@@ -276,17 +255,6 @@ func (cfg *Config) Validate() error {
 		}
 	}
 
-	// A half-configured pair would otherwise fail at listener setup, long after
-	// the operator typed the one path they remembered.
-	if (cfg.DashboardTLSCertFile == "") != (cfg.DashboardTLSKeyFile == "") {
-		return fmt.Errorf("dashboard_tls_cert_file and dashboard_tls_key_file must be set together")
-	}
-	if cfg.DashboardPasswordHash != "" {
-		if err := ValidatePasswordHash(cfg.DashboardPasswordHash); err != nil {
-			return fmt.Errorf("invalid dashboard_password_hash: %w", err)
-		}
-	}
-
 	if !isValidLogLevel(cfg.LogLevel) {
 		return fmt.Errorf("log_level must be one of: debug, info, warn, error")
 	}
@@ -314,9 +282,6 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.RetryAttempts <= 0 {
 		return fmt.Errorf("retry_attempts must be positive")
-	}
-	if cfg.RevealOffsetBlocks < 0 {
-		return fmt.Errorf("reveal_offset_blocks cannot be negative")
 	}
 
 	return nil

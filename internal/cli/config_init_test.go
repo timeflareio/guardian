@@ -109,8 +109,49 @@ func TestConfigInitRefusesToOverwriteExistingConfig(t *testing.T) {
 	}
 }
 
-// Flag mode is what an automated fleet uses, so a missing flag has to be an
-// error rather than a silent fall-through to a prompt that no one will answer.
+// --non-interactive must name everything it is short of, not fail on the first
+// one, and it must never prompt.
+func TestConfigInitNonInteractiveNamesEverythingMissing(t *testing.T) {
+	g := newFixture(t)
+
+	out, err := g.run("", "config", "init", "--non-interactive")
+	if err == nil {
+		t.Fatalf("init ran unattended with no flags at all:\n%s", out)
+	}
+	for _, want := range []string{"--key-name", "--keyring-passphrase", "--encryption-public-key or --auto-generate-key"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not name %s: %v", want, err)
+		}
+	}
+
+	// Nothing is written until every step has succeeded.
+	if _, statErr := os.Stat(g.configPath); statErr == nil {
+		t.Error("a failed init left a configuration file behind")
+	}
+}
+
+// init writes through the same validation as `config set`, so a key it accepts
+// is a key the rest of the tooling accepts.
+func TestConfigInitRejectsAMalformedEncryptionKey(t *testing.T) {
+	g := newFixture(t)
+	g.mustRun("", "wallet", "create", "--name", "guardian-one")
+
+	out, err := g.run("",
+		"config", "init",
+		"--key-name", "guardian-one",
+		"--keyring-backend", "test",
+		"--keyring-dir", g.dir,
+		"--keyring-passphrase", "keyring-pass",
+		"--encryption-public-key", "abc123",
+	)
+	if err == nil {
+		t.Fatalf("init accepted a 6-character encryption public key:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "64 hex characters") {
+		t.Errorf("init did not explain the key length: %v", err)
+	}
+}
+
 func TestConfigInitFlagModeRequiresCompleteFlags(t *testing.T) {
 	for _, c := range []struct {
 		name string

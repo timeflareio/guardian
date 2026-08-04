@@ -243,14 +243,15 @@ func validateFieldValue(key, value string) error {
 		if value != "" && len(value) != 64 {
 			return fmt.Errorf("encryption public key must be exactly 64 hex characters (32 bytes)")
 		}
-	case "dashboard_password_hash":
-		// Catches the operator who sets this to the password itself, and the
-		// env-override path (GUARDIAN_DASHBOARD_PASSWORD_HASH) with it.
-		if value != "" {
-			return ValidatePasswordHash(value)
-		}
 	}
 	return nil
+}
+
+// ExpandPath expands a filesystem path exactly as a path-tagged field is
+// expanded on set. Exported so a command flag carrying a path gets identical
+// treatment rather than growing a second implementation of the same rules.
+func ExpandPath(path string) string {
+	return expandPath(path)
 }
 
 // expandPath expands environment variables and a leading tilde in paths.

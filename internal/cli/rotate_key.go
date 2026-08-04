@@ -279,7 +279,7 @@ func runRotateKey(cmd *cobra.Command, args []string) error {
 	if err := os.WriteFile(publicKeyPath, []byte(newPubHex), 0644); err != nil { //nolint:gosec // public key
 		u.Warning("Failed to refresh %s: %v", publicKeyPath, err)
 	}
-	if err := manager.SetWithoutValidation("encryption_public_key", newPubHex); err != nil {
+	if err := manager.Set("encryption_public_key", newPubHex); err != nil {
 		return err
 	}
 	if err := manager.Save(); err != nil {

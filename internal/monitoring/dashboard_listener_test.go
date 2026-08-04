@@ -43,8 +43,10 @@ func (fakeSource) Assignments(context.Context) dashboard.Assignments {
 }
 func (fakeSource) Economics(context.Context) dashboard.Economics { return dashboard.Economics{} }
 func (fakeSource) Keys(context.Context) dashboard.Keys           { return dashboard.Keys{} }
-func (fakeSource) Config(context.Context) dashboard.Config       { return dashboard.Config{} }
-func (fakeSource) Activity(context.Context) dashboard.Activity   { return dashboard.Activity{} }
+func (fakeSource) Registration(context.Context) dashboard.Registration {
+	return dashboard.Registration{}
+}
+func (fakeSource) Activity(context.Context) dashboard.Activity { return dashboard.Activity{} }
 
 // freePorts reserves n ports and releases them, so the test binds real but
 // unpredictable ports instead of racing whatever is on the defaults.

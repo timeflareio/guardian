@@ -8,13 +8,10 @@ import (
 )
 
 // Configuration reaches a command through one function, called explicitly by
-// the command that needs it. It used to arrive through package-level variables
-// filled by cobra.OnInitialize, which had three costs: `guardiand version`
-// failed on a host with no configuration file (the initialiser called
-// os.Exit(1)), commands disagreed about which view of the configuration was
-// current — some read the global, others reloaded through the manager — and one
-// path replaced the manager mid-run while the global still pointed at the old
-// one. A resolver that returns its result cannot drift from itself.
+// the command that needs it. A resolver that returns its result cannot drift
+// from itself: every command holds exactly the view it asked for, a command
+// that needs no configuration never loads any, and nothing can replace the
+// manager mid-run behind a caller's back.
 
 // configFlagName is the persistent flag naming the configuration file. Declared
 // on the root command, so cmd.Flags() resolves it on any subcommand.
@@ -36,9 +33,9 @@ func newManager(cmd *cobra.Command) *config.Manager {
 // requireConfig resolves the configuration for a command that cannot run
 // without one: the file, then GUARDIAN_* environment overrides, then any flags
 // the command bound with bindConfigFlags. It reports a missing file as an
-// error rather than a message-and-success — several commands used to return nil
-// in that case, so `guardiand start` on an unconfigured host exited zero,
-// which to a process supervisor is indistinguishable from having run.
+// error rather than a message-and-success: `guardiand start` on an unconfigured
+// host must not exit zero, which to a process supervisor is indistinguishable
+// from having run.
 func requireConfig(cmd *cobra.Command) (*config.Manager, *config.Config, error) {
 	manager := newManager(cmd)
 	if !manager.Exists() {

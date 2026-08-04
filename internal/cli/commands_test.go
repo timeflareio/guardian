@@ -6,7 +6,30 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/timeflareio/guardian/internal/config"
 )
+
+// The listing renders whatever the registry declares, so a group the registry
+// knows about has to reach the output. An unrecognised group is skipped rather
+// than reported, so a listing that silently loses every value still looks like
+// a successful run.
+func TestConfigListShowsEveryRegistryGroup(t *testing.T) {
+	g := newFixture(t)
+	g.initialised("guardian-one")
+
+	out := g.mustRun("", "config", "list")
+	for _, group := range config.GroupOrder() {
+		if !strings.Contains(out, group) {
+			t.Errorf("config list omitted the %q group:\n%s", group, out)
+		}
+	}
+	for _, key := range []string{"chain_id", "key_name", "keyring_backend"} {
+		if !strings.Contains(out, key) {
+			t.Errorf("config list omitted %q:\n%s", key, out)
+		}
+	}
+}
 
 // health is what a process supervisor and a container probe call, so its exit
 // status is the whole contract: zero only when the guardian says it is healthy.

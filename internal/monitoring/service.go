@@ -189,25 +189,6 @@ func (s *Service) SetDashboardSource(src dashboard.Source) {
 	s.dashboardSource = src
 }
 
-// dashboardAuthenticator chooses the dashboard's access model from the
-// effective config.
-//
-// A configured credential is always honoured, including on loopback: the
-// loopback exemption is permission to serve without one, not a rule that
-// discards one the operator has set. Start never reaches the unauthenticated
-// branch on an exposed bind address — DashboardWithheld withholds the listener
-// first — so this cannot serve an exposed page without a credential.
-func (s *Service) dashboardAuthenticator() dashboard.Authenticator {
-	if s.config.DashboardPasswordHash == "" {
-		return dashboard.NoAuth()
-	}
-	realm := "timeflare guardian"
-	if identity := s.config.DashboardIdentity(); identity != "" {
-		realm += " " + identity
-	}
-	return dashboard.BasicAuth(realm, s.config.DashboardPasswordHash, s.logger)
-}
-
 // Metrics returns the metrics sink for the guardian service to record into.
 func (s *Service) Metrics() *Metrics {
 	return s.metrics
@@ -258,20 +239,12 @@ func (s *Service) Start(ctx context.Context) error {
 	// Bound synchronously like the others so a taken port fails startup rather
 	// than leaving the operator with a silently missing dashboard.
 	//
-	// Fail closed, but do not take the guardian offline: an exposed dashboard
-	// with no credential is not bound at all, while health, metrics and — the
-	// point — reveals carry on. A missed reveal window is slashable, so failing
-	// a guardian's economic function over a dashboard misconfiguration would
-	// cost the operator real amounts to protect a page.
+	// There is no withholding branch and no credential to check. The page is
+	// served wherever it is bound, because what it carries is limited to what
+	// the chain already publishes about this guardian plus liveness — that rule
+	// lives in the dashboard package, and it is what replaced the credential.
 	var dashboardLn net.Listener
-	switch {
-	case !s.config.EnableDashboard || s.dashboardSource == nil:
-		// Not enabled, or nothing to serve from yet.
-	case s.config.DashboardWithheld():
-		s.logger.Error("Operator dashboard NOT served: it would be reachable beyond loopback without a credential — set one with 'guardiand config set-dashboard-password' (the guardian is otherwise unaffected and continues to reveal)",
-			zap.String("bind_address", s.config.BindAddress),
-			zap.Int("dashboard_port", s.config.DashboardPort))
-	default:
+	if s.config.EnableDashboard && s.dashboardSource != nil {
 		dashboardAddr := fmt.Sprintf("%s:%d", s.config.BindAddress, s.config.DashboardPort)
 		dashboardLn, err = net.Listen("tcp", dashboardAddr)
 		if err != nil {
@@ -281,7 +254,7 @@ func (s *Service) Start(ctx context.Context) error {
 		}
 		s.dashboardServer = &http.Server{
 			Addr:    dashboardAddr,
-			Handler: dashboard.Handler(s.dashboardSource, s.dashboardAuthenticator()),
+			Handler: dashboard.Handler(s.dashboardSource),
 			// The dashboard serves a browser rather than a scraper, so it gets
 			// read/write deadlines the other listeners do not need — a hung
 			// browser connection must not pin a goroutine indefinitely.
@@ -297,23 +270,11 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	if dashboardLn != nil {
 		fields = append(fields, zap.Int("dashboard_port", s.config.DashboardPort))
-		// What the operator surface is doing is a thing to know at startup, not
-		// to infer from a port table. The one state that warns is the one with a
-		// residual risk: a credential crossing a routable network in base64.
-		switch {
-		case !s.config.DashboardAuthRequired():
-			s.logger.Info("Operator dashboard served on loopback without a credential",
-				zap.String("bind_address", s.config.BindAddress),
-				zap.Int("dashboard_port", s.config.DashboardPort))
-		case s.config.DashboardTLSEnabled():
-			s.logger.Info("Operator dashboard served with authentication over TLS",
-				zap.String("bind_address", s.config.BindAddress),
-				zap.Int("dashboard_port", s.config.DashboardPort))
-		default:
-			s.logger.Warn("Operator dashboard is authenticated but NOT encrypted — Basic auth defends against unauthorised readers, not against a network eavesdropper; set dashboard_tls_cert_file and dashboard_tls_key_file, or front it with a TLS proxy",
-				zap.String("bind_address", s.config.BindAddress),
-				zap.Int("dashboard_port", s.config.DashboardPort))
-		}
+		// Where the operator surface is reachable from is a thing to know at
+		// startup rather than to infer from a port table.
+		s.logger.Info("Operator dashboard served (read-only, unauthenticated: it carries only what the chain already publishes about this guardian)",
+			zap.String("bind_address", s.config.BindAddress),
+			zap.Int("dashboard_port", s.config.DashboardPort))
 	}
 	s.logger.Info("Starting monitoring service", fields...)
 
@@ -330,17 +291,11 @@ func (s *Service) Start(ctx context.Context) error {
 	}()
 	if dashboardLn != nil {
 		go func() {
-			var err error
-			if s.config.DashboardTLSEnabled() {
-				// In-process TLS rather than "put a proxy in front of it": the
-				// Docker-only operator this dashboard is designed around may
-				// have no proxy, and telling them to acquire one is how a
-				// default stays insecure. Certificate lifecycle stays theirs.
-				err = s.dashboardServer.ServeTLS(dashboardLn, s.config.DashboardTLSCertFile, s.config.DashboardTLSKeyFile)
-			} else {
-				err = s.dashboardServer.Serve(dashboardLn)
-			}
-			if err != nil && err != http.ErrServerClosed {
+			// Plain HTTP. TLS here defended a credential in transit; with no
+			// credential and nothing confidential in the payload there is
+			// nothing left for it to protect, and an operator who wants the
+			// port encrypted can still front it with a proxy.
+			if err := s.dashboardServer.Serve(dashboardLn); err != nil && err != http.ErrServerClosed {
 				serveErr <- fmt.Errorf("dashboard server failed: %w", err)
 			}
 		}()

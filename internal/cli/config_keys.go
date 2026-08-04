@@ -3,7 +3,6 @@ package cli
 import (
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -175,7 +174,7 @@ func runConfigMigrateKey(cmd *cobra.Command, args []string) error {
 		u.Note("Passphrase stored at %s (0600) so the daemon can decrypt unattended", custody.SiblingPassphrasePath(keyPath))
 	}
 	if flagPassphraseFile != "" {
-		if err := manager.SetWithoutValidation("encryption_key_passphrase", flagPassphraseFile); err != nil {
+		if err := manager.Set("encryption_key_passphrase", flagPassphraseFile); err != nil {
 			return errors.Wrap(err, "failed to set encryption_key_passphrase")
 		}
 		if err := manager.Save(); err != nil {
@@ -208,25 +207,11 @@ func runConfigCreateEncryptionKey(cmd *cobra.Command, args []string) error {
 	fileName, _ := cmd.Flags().GetString("file-name")
 	directory, _ := cmd.Flags().GetString("directory")
 
-	// Determine directory - use flag if provided, otherwise derive from config path
-	var expandedDir string
+	// Determine directory - use flag if provided, otherwise derive from config
+	// path. The flag is expanded by the same rules as a path-tagged field.
+	expandedDir := manager.GetKeyDirectory()
 	if directory != "" {
-		// User provided explicit directory, expand it
-		expandedDir = os.ExpandEnv(directory)
-		if strings.HasPrefix(directory, "~") {
-			homeDir, err := os.UserHomeDir()
-			if err != nil {
-				return errors.Wrap(err, "failed to get home directory: %w")
-			}
-			if directory == "~" {
-				expandedDir = homeDir
-			} else if strings.HasPrefix(directory, "~/") {
-				expandedDir = filepath.Join(homeDir, directory[2:])
-			}
-		}
-	} else {
-		// No directory flag provided, derive from config path
-		expandedDir = manager.GetKeyDirectory()
+		expandedDir = config.ExpandPath(directory)
 	}
 
 	// Define file paths
@@ -380,5 +365,5 @@ func writeEncryptionKeyPassphraseFile(manager *config.Manager, passphrase string
 	if err := custody.WritePassphraseFile(sibling, passphrase); err != nil {
 		return err
 	}
-	return manager.SetWithoutValidation("encryption_key_passphrase", sibling)
+	return manager.Set("encryption_key_passphrase", sibling)
 }

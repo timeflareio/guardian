@@ -54,11 +54,11 @@ flags below, in that order of increasing precedence.`,
 	// Command-specific flags
 	cmd.Flags().Int("startup-timeout", 30, "startup timeout in seconds")
 
-	// Accepted and ignored. The service no longer prompts, so there is nothing
-	// to accept — but the chain repository's devnet scripts pass this flag on
-	// every guardian start, and an unknown-flag error there would be a
-	// cross-repository break for a flag that costs nothing to tolerate. It is
-	// removed once those invocations have dropped it.
+	// Accepted and ignored: the service does not prompt, so there is nothing to
+	// accept. The chain repository's devnet scripts pass this flag on every
+	// guardian start, and an unknown-flag error there would be a cross-repository
+	// break for a flag that costs nothing to tolerate. It goes once those
+	// invocations have dropped it.
 	cmd.Flags().Bool("accept", false, "")
 	_ = cmd.Flags().MarkHidden("accept")
 
