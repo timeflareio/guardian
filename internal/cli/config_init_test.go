@@ -151,6 +151,28 @@ func TestConfigInitGeneratesADashboardPassword(t *testing.T) {
 	}
 }
 
+// --non-interactive is the explicit spelling of a mode that used to be inferred
+// from which flags happened to be named. It has to name everything it is short
+// of, not fail on the first one, and it must not prompt.
+func TestConfigInitNonInteractiveNamesEverythingMissing(t *testing.T) {
+	g := newFixture(t)
+
+	out, err := g.run("", "config", "init", "--non-interactive")
+	if err == nil {
+		t.Fatalf("init ran unattended with no flags at all:\n%s", out)
+	}
+	for _, want := range []string{"--key-name", "--keyring-passphrase", "--encryption-public-key or --auto-generate-key"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not name %s: %v", want, err)
+		}
+	}
+
+	// Nothing is written until every step has succeeded.
+	if _, statErr := os.Stat(g.configPath); statErr == nil {
+		t.Error("a failed init left a configuration file behind")
+	}
+}
+
 // init writes through the same validation as `config set`, so a key it accepts
 // is a key the rest of the tooling accepts. It used to bypass the value checks
 // and could leave a configuration that `config set` would have refused.

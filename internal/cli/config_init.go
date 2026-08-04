@@ -18,6 +18,12 @@ import (
 // on request, generates the share-encryption keypair behind it. It is the one
 // command that must work with no configuration present, so it resolves its own
 // target path rather than requiring a loaded one.
+//
+// It runs in two halves. Each step *collects* a value — from a flag, or a
+// prompt — and returns it; nothing is written until every step has succeeded,
+// and then applyInitSettings writes the lot in one place. Interleaving the two
+// is what let the collection steps grow to four hundred lines, and it meant a
+// step that failed late left the earlier ones already applied to the manager.
 
 // NewConfigInitCmd creates the config init command
 func NewConfigInitCmd() *cobra.Command {
@@ -29,25 +35,27 @@ func NewConfigInitCmd() *cobra.Command {
 Creates ~/.timeflare/guardian/config.yaml with sensible defaults if it doesn't exist.
 If the file already exists, this command will not overwrite it.
 
-Critical parameters can be set via flags or will be prompted interactively.`,
+Critical parameters can be set via flags or will be prompted interactively.
+--non-interactive demands the flag form and names whatever is missing rather
+than prompting for it.`,
 		Example: `  # Initialize with interactive prompts
   guardianctl config init
 
-  # Initialize with flags to skip all prompts  
-  guardianctl config init \
+  # Initialize with flags to skip all prompts
+  guardianctl config init --non-interactive \
     --key-name [key-name] \
     --keyring-passphrase [password] \
     --encryption-public-key [64-char-hex]
 
   # Initialize with auto-generated keys (encrypted at rest by default)
-  guardianctl config init \
+  guardianctl config init --non-interactive \
     --key-name [key-name] \
     --keyring-passphrase [password] \
     --encryption-key-passphrase [password] \
     --auto-generate-key
 
   # Initialize with custom keyring directory (for isolated setups)
-  guardianctl config init \
+  guardianctl config init --non-interactive \
     --key-name [key-name] \
     --keyring-dir [/path/to/keyring] \
     --keyring-passphrase [password] \
@@ -68,12 +76,108 @@ Critical parameters can be set via flags or will be prompted interactively.`,
 	cmd.Flags().String("keyring-dir", "", "directory for the timeflared keyring")
 	cmd.Flags().String("keyring-passphrase", "", "keyring passphrase for automated access (stored verbatim in a 0600 file)")
 	cmd.Flags().String("encryption-key-passphrase", "", "passphrase encrypting the generated share key at rest (required with --auto-generate-key; stored verbatim in a 0600 file beside the key, never in the config values)")
+	cmd.Flags().Bool("non-interactive", false, "never prompt: take every value from flags and fail naming any that are missing")
 	// Switches rather than a value: the dashboard password is never taken on the
 	// command line. See collectDashboardPassword.
 	cmd.Flags().Bool("generate-dashboard-password", false, "generate the operator dashboard password, print it once, and store only its bcrypt hash")
 	cmd.Flags().Bool("dashboard-password-stdin", false, "read the operator dashboard password from stdin (for scripts and image builds)")
 
 	return cmd
+}
+
+// initFlags is what this invocation asked for, read once so no step has to
+// reach back into cobra.
+type initFlags struct {
+	encryptionKey     string
+	autoGenerateKey   bool
+	keyName           string
+	keyringBackend    string
+	keyringDir        string
+	keyringPassphrase string
+	encKeyPassphrase  string
+	nonInteractive    bool
+	generateDashboard bool
+	dashboardStdin    bool
+}
+
+func readInitFlags(cmd *cobra.Command) initFlags {
+	f := initFlags{}
+	f.encryptionKey, _ = cmd.Flags().GetString("encryption-public-key")
+	f.autoGenerateKey, _ = cmd.Flags().GetBool("auto-generate-key")
+	f.keyName, _ = cmd.Flags().GetString("key-name")
+	f.keyringBackend, _ = cmd.Flags().GetString("keyring-backend")
+	f.keyringDir, _ = cmd.Flags().GetString("keyring-dir")
+	f.keyringPassphrase, _ = cmd.Flags().GetString("keyring-passphrase")
+	f.encKeyPassphrase, _ = cmd.Flags().GetString("encryption-key-passphrase")
+	f.nonInteractive, _ = cmd.Flags().GetBool("non-interactive")
+	f.generateDashboard, _ = cmd.Flags().GetBool("generate-dashboard-password")
+	f.dashboardStdin, _ = cmd.Flags().GetBool("dashboard-password-stdin")
+	return f
+}
+
+// interactive reports whether the wizard prompts.
+//
+// --non-interactive says so outright. Naming any of the identity flags means it
+// too, and always has: that inference predates the flag and scripts depend on
+// it, so it stays as a compatibility rule rather than the primary spelling. It
+// is also why --keyring-backend and --keyring-dir are absent from the list —
+// neither identifies a guardian on its own.
+func (f initFlags) interactive() bool {
+	if f.nonInteractive {
+		return false
+	}
+	named := f.keyName != "" || f.encryptionKey != "" || f.autoGenerateKey ||
+		f.keyringPassphrase != "" || f.encKeyPassphrase != ""
+	return !named
+}
+
+// backend returns the keyring backend, defaulting to file.
+func (f initFlags) backend() string {
+	if f.keyringBackend == "" {
+		return "file"
+	}
+	return f.keyringBackend
+}
+
+// validateUnattended checks that a run which will never prompt has been given
+// everything it needs, naming all of what is missing rather than failing on the
+// first one.
+func (f initFlags) validateUnattended() error {
+	if f.encryptionKey != "" && f.autoGenerateKey {
+		return errors.New("cannot use both --encryption-public-key and --auto-generate-key flags together")
+	}
+
+	missing := []string{}
+	if f.keyName == "" {
+		missing = append(missing, "--key-name")
+	}
+	if f.encryptionKey == "" && !f.autoGenerateKey {
+		missing = append(missing, "--encryption-public-key or --auto-generate-key")
+	}
+	if f.backend() == "file" && f.keyringPassphrase == "" {
+		missing = append(missing, "--keyring-passphrase")
+	}
+	// Generated keys are encrypted at rest by default — there is no plaintext
+	// generation path (key custody plan, decision 1).
+	if f.autoGenerateKey && f.encKeyPassphrase == "" {
+		missing = append(missing, "--encryption-key-passphrase")
+	}
+
+	if len(missing) > 0 {
+		return errors.Errorf("when using flags for atomic setup, all required flags must be provided. Missing: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+// initSettings is everything the steps collected, ready to be written.
+type initSettings struct {
+	keyName             string
+	keyringBackend      string
+	keyringDir          string
+	keyringPassphrase   string
+	guardianAddress     string
+	encryptionPublicKey string
+	dashboardHash       string
 }
 
 func runConfigInit(cmd *cobra.Command, args []string) error {
@@ -84,347 +188,313 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 	manager := newManager(cmd)
 	configPath := manager.GetConfigPath()
 
-	// Check if config file already exists
 	if _, err := os.Stat(configPath); err == nil {
 		u.TextLn("Configuration file already exists at: " + configPath)
 		u.TextLn("Use 'guardianctl config list' to view current settings.")
 		return nil
 	}
 
-	// No script creation needed for atomic flag-based setup
-
-	// Get flag values
-	flagEncryptionKey, _ := cmd.Flags().GetString("encryption-public-key")
-	flagAutoGenerateKey, _ := cmd.Flags().GetBool("auto-generate-key")
-	flagKeyName, _ := cmd.Flags().GetString("key-name")
-	flagKeyringBackend, _ := cmd.Flags().GetString("keyring-backend")
-	flagKeyringDir, _ := cmd.Flags().GetString("keyring-dir")
-	flagKeyringPassword, _ := cmd.Flags().GetString("keyring-passphrase")
-	flagEncKeyPassphrase, _ := cmd.Flags().GetString("encryption-key-passphrase")
-	flagGenerateDashboard, _ := cmd.Flags().GetBool("generate-dashboard-password")
-	flagDashboardStdin, _ := cmd.Flags().GetBool("dashboard-password-stdin")
-
-	var encryptionKey, guardianID, keyName, keyringBackend string
-
-	// Determine if we're using flags (atomic setup) or interactive setup
-	usingFlags := flagKeyName != "" || flagEncryptionKey != "" || flagAutoGenerateKey || flagKeyringPassword != "" || flagEncKeyPassphrase != ""
-
-	if usingFlags {
-		// Validate flag combinations
-		if flagEncryptionKey != "" && flagAutoGenerateKey {
-			return errors.New("cannot use both --encryption-public-key and --auto-generate-key flags together")
-		}
-
-		// When using flags, require all necessary parameters for atomic setup
-		missingFlags := []string{}
-		if flagKeyName == "" {
-			missingFlags = append(missingFlags, "--key-name")
-		}
-		if flagEncryptionKey == "" && !flagAutoGenerateKey {
-			missingFlags = append(missingFlags, "--encryption-public-key or --auto-generate-key")
-		}
-		if flagKeyringBackend == "file" && flagKeyringPassword == "" {
-			missingFlags = append(missingFlags, "--keyring-passphrase")
-		}
-		// Generated keys are encrypted at rest by default — there is no
-		// plaintext generation path (key custody plan, decision 1).
-		if flagAutoGenerateKey && flagEncKeyPassphrase == "" {
-			missingFlags = append(missingFlags, "--encryption-key-passphrase")
-		}
-
-		if len(missingFlags) > 0 {
-			return errors.Errorf("when using flags for atomic setup, all required flags must be provided. Missing: %s", strings.Join(missingFlags, ", "))
+	flags := readInitFlags(cmd)
+	interactive := flags.interactive()
+	if !interactive {
+		if err := flags.validateUnattended(); err != nil {
+			return err
 		}
 	}
 
-	needsInteractive := !usingFlags
-
-	// No script creation needed - we'll use CGO for key generation
-
-	// Use keyring backend from flag or default to file
-	keyringBackend = flagKeyringBackend
-	if keyringBackend == "" {
-		keyringBackend = "file"
+	settings := initSettings{
+		keyringBackend: flags.backend(),
+		keyringDir:     flags.keyringDir,
 	}
 
-	if flagKeyName != "" {
-		keyName = flagKeyName
-		if needsInteractive {
-			u.Success("Using keyring key name from flag: %s\n", keyName)
-		}
-	} else {
-		// Show header for interactive setup
+	if interactive {
 		u.EmptyLine()
 		u.Header("      🚀 Guardian Configuration Setup")
 		u.Separator("      ═══════════════════════════════")
 		u.Note("         Press Ctrl+C to exit at any time\n")
-
-		u.Step("🔑 Step 1: Blockchain Signing Key")
-		u.TextLn(ui.Indent1 + "Guardians need a signing key for blockchain transactions (registration, reveals, etc.)")
-		u.TextLn(ui.Indent1 + "This key will also serve as your guardian identifier.\n")
-
-		u.Note(ui.Indent1+"Create the signing key with guardianctl (using the %s keyring):\n", keyringBackend)
-
-		u.TextLn(ui.Indent2 + "# Create a new signing key (shows the 24-word backup mnemonic once)")
-		u.Text(ui.Indent2)
-		u.Command("guardianctl wallet create --name [key-name]\n")
-		u.TextLn(ui.Indent2 + "# Or restore an existing key from its 24 words")
-		u.Text(ui.Indent2)
-		u.Command("guardianctl wallet import-from-mnemonic --name [key-name]\n")
-		u.TextLn(ui.Indent2 + "# View your wallet address")
-		u.Text(ui.Indent2)
-		u.Command("guardianctl wallet show-address --name [key-name]\n")
-
-		u.Note(ui.Indent1 + "Important notes:")
-		u.TextLn(ui.Indent2 + "• Back up your 24-word mnemonic securely")
-		u.TextLn(ui.Indent2 + "• You'll need VEIL for gas fees, the entry fee and any deposit")
-		u.TextLn(ui.Indent2 + "• The key name must exist in the guardian's keyring")
-		u.TextLn(ui.Indent2 + "• This key name will also be used as your guardian identifier\n")
-
-		keyName = u.PromptInput("🗝️  Enter keyring key name: ")
-		if keyName == "" {
-			return errors.New("keyring key name is required")
-		}
-
-		// Section separator
-		u.Note(ui.Indent1 + "─────────────────────────────────────────────────\n")
 	}
 
-	// Use keyring key name as guardian ID (simplifies identity management)
-	guardianID = keyName
-
-	// Step 2: Keyring Passphrase Setup and Address Resolution
-	var guardianAddress string
-	var passphraseForFile string
-
-	// Get passphrase from flag or prompt
-	if flagKeyringPassword != "" {
-		passphraseForFile = flagKeyringPassword
-		if needsInteractive {
-			u.Success("Using keyring passphrase from flag")
-		}
-	} else if keyringBackend == "file" && needsInteractive {
-		u.EmptyLine()
-		u.Step("🔐 Step 2: Keyring Passphrase Setup")
-		u.TextLn(ui.Indent1 + "Guardian operations require automatic transaction signing for confirming")
-		u.TextLn(ui.Indent1 + "and revealing secret shares. A passphrase file enables these automated")
-		u.TextLn(ui.Indent1 + "transactions without manual intervention.\n")
-
-		u.Text(ui.Indent1 + "🔑 Enter your keyring passphrase: ")
-		passphraseBytes, err := u.ReadPassword()
-		if err != nil {
-			u.Warning("Could not read passphrase: %v", err)
-		} else {
-			passphrase := strings.TrimSpace(string(passphraseBytes))
-			if passphrase != "" {
-				passphraseForFile = passphrase
-				u.Success("Passphrase collected")
-			}
-		}
+	var err error
+	if settings.keyName, err = collectSigningKeyName(u, flags); err != nil {
+		return err
+	}
+	if settings.keyringPassphrase, err = collectKeyringPassphrase(u, flags, settings.keyringBackend, interactive); err != nil {
+		return err
+	}
+	if settings.guardianAddress, err = resolveInitAddress(u, manager, flags, settings, interactive); err != nil {
+		return err
+	}
+	if settings.encryptionPublicKey, err = collectEncryptionKey(u, manager, flags, interactive); err != nil {
+		return err
 	}
 
-	// Resolve guardian address if we have passphrase
-	if passphraseForFile != "" {
-		if needsInteractive {
-			u.Step(ui.Indent1 + "🔍 Resolving guardian address from key...")
-		}
-
-		guardianAddress = resolveAddressWithPassword(manager, keyName, keyringBackend, passphraseForFile, flagKeyringDir)
-
-		// For flag-based setup, address resolution is required
-		if !needsInteractive && guardianAddress == "" {
-			return errors.Errorf("failed to resolve guardian address from key-name '%s' with provided passphrase - please verify the key exists and passphrase is correct", keyName)
-		}
-
-		if needsInteractive {
-			if guardianAddress != "" {
-				u.Success("Guardian address: %s", guardianAddress)
-			} else {
-				u.Warning("Could not resolve guardian address")
-			}
-
-			// Section separator
-			u.Note(ui.Indent1 + "─────────────────────────────────────────────────")
-		} else if guardianAddress != "" {
-			// For flag-based setup, show the resolved address
-			u.Success("Guardian address resolved: %s", guardianAddress)
-		}
-	}
-
-	// Step 3: Encryption Key Setup
-	if flagEncryptionKey != "" {
-		// Using provided encryption key
-		encryptionKey = flagEncryptionKey
-		if needsInteractive {
-			u.Success("Using encryption public key from flag: %s...\n", encryptionKey[:8])
-		}
-	} else if flagAutoGenerateKey {
-		// Auto-generate keys in flag mode (encrypted at rest, passphrase from
-		// the required flag)
-		var err error
-		encryptionKey, err = runCreateEncryptionKey(manager, flagEncKeyPassphrase)
-		if err != nil {
-			return errors.Wrap(err, "auto key generation failed")
-		}
-		if err := writeEncryptionKeyPassphraseFile(manager, flagEncKeyPassphrase); err != nil {
-			return errors.Wrap(err, "failed to store share-key passphrase file")
-		}
-		if needsInteractive {
-			u.Success("Encryption keys auto-generated: %s...\n", encryptionKey[:8])
-		}
-	} else if needsInteractive {
-		// Interactive mode - prompt user for choice
-		u.EmptyLine()
-		u.Step("🔑 Step 3: Encryption Key Setup")
-		u.TextLn(ui.Indent1 + "Guardians need encryption keys to securely receive and decrypt secret shares.")
-		u.TextLn(ui.Indent1 + "You can either provide an existing public key or generate new keys.\n")
-
-		u.Note(ui.Indent1 + "Options:")
-		u.TextLn(ui.Indent2 + "1. Generate new keys automatically (recommended for new guardians)")
-		u.TextLn(ui.Indent2 + "2. Provide existing public key (if you already have encryption keys)\n")
-
-		choice := u.PromptInput(ui.Indent1 + "🔀 Generate new keys? [Y/n]: ")
-		choice = strings.ToLower(strings.TrimSpace(choice))
-
-		if choice == "" || choice == "y" || choice == "yes" {
-			// Generate new keys — encrypted at rest by default (there is no
-			// plaintext generation path)
-			u.EmptyLine()
-			u.Note(ui.Indent1 + "The private key is stored encrypted at rest. Choose a passphrase;")
-			u.Note(ui.Indent1 + "it is kept in a 0600 file beside the key so the daemon can run unattended.")
-			passphrase, err := u.NewPassphrase("share-encryption private key")
-			if err != nil {
-				return errors.Wrap(err, "failed to read share-key passphrase")
-			}
-
-			u.TextLn("\n" + ui.Indent1 + "⚡ Generating encryption keys...")
-
-			encryptionKey, err = runCreateEncryptionKey(manager, passphrase)
-			if err != nil {
-				u.Warning("Key generation failed: %v", err)
-				u.Note(ui.Indent1 + "You can set the encryption key later with:" + ui.Indent1)
-				u.Command("guardianctl config set encryption-public-key <64-hex-chars>\n\n")
-				encryptionKey = "" // Continue without key
-			} else {
-				if err := writeEncryptionKeyPassphraseFile(manager, passphrase); err != nil {
-					return errors.Wrap(err, "failed to store share-key passphrase file")
-				}
-				u.Success("Encryption keys generated successfully!")
-				privateKeyPath := manager.GetPrivateKeyPath()
-				publicKeyPath := manager.GetPublicKeyPath()
-				u.TextLn(ui.Indent1 + "📁 Key locations:")
-				u.TextLn(ui.Indent2 + "• Private key: " + privateKeyPath + " (encrypted at rest — keep it SECRET!)")
-				u.TextLn(ui.Indent2 + "• Passphrase:  " + custody.SiblingPassphrasePath(privateKeyPath))
-				u.TextLn(ui.Indent2 + "• Public key:  " + publicKeyPath)
-				u.TextLn(ui.Indent2 + "• Public key hex: " + encryptionKey)
-				u.Warning("CRITICAL: Back up your private key securely!")
-				u.TextLn(ui.Indent2 + "• Run 'guardianctl key backup' after registration for a portable encrypted bundle")
-				u.TextLn(ui.Indent2 + "• Without the key, you cannot decrypt shares sent to you")
-				u.TextLn(ui.Indent2 + "• Lost keys prevent participation in reveals, resulting in slashing penalties\n")
-			}
-		} else {
-			// Manual key input
-			encryptionKey = u.PromptInput("\n" + ui.Indent1 + "🔑 Enter your encryption public key (64 hex characters): ")
-			if len(encryptionKey) != 64 {
-				u.Warning("Invalid key length: expected 64 characters, got %d", len(encryptionKey))
-				u.Note(ui.Indent1 + "You can set the correct encryption key later with:" + ui.Indent1)
-				u.Command("guardianctl config set encryption-public-key <64-hex-chars>\n\n")
-				encryptionKey = "" // Continue without key
-			} else {
-				u.Success("Using provided encryption key: %s...\n", encryptionKey[:8])
-			}
-		}
-
-		// Section separator
-		if encryptionKey != "" {
-			u.Note(ui.Indent1 + "─────────────────────────────────────────────────\n")
-		}
-	} else {
-		// Non-interactive mode without flags - should not happen due to validation above
-		return errors.New("encryption key required: use --encryption-public-key or --auto-generate-key")
-	}
-
-	// Step 4: Operator dashboard password
-	//
 	// Collected here so a guardian can come out of init with the dashboard
 	// already reachable rather than withheld. It does not replace
 	// `config set-dashboard-password`: init refuses to run against an existing
 	// configuration, so that command remains the only way to rotate the password
 	// or to set one when the dashboard is enabled later.
 	dashboardHash, generatedDashboardPassword, err := collectDashboardPassword(
-		u, flagGenerateDashboard, flagDashboardStdin, needsInteractive)
+		u, flags.generateDashboard, flags.dashboardStdin, interactive)
 	if err != nil {
 		return err
 	}
+	settings.dashboardHash = dashboardHash
 
-	// Set the user-provided values using the config manager
-	if encryptionKey != "" {
-		if err := manager.Set("encryption_public_key", encryptionKey); err != nil {
-			return errors.Wrap(err, "failed to set encryption key")
-		}
-		// Set the private key path using config-derived path
-		privateKeyPath := manager.GetPrivateKeyPath()
-		if err := manager.Set("encryption_private_key_path", privateKeyPath); err != nil {
-			return errors.Wrap(err, "failed to set encryption private key path")
-		}
+	if err := applyInitSettings(manager, settings); err != nil {
+		return err
 	}
-	if err := manager.Set("guardian_id", guardianID); err != nil {
-		return errors.Wrap(err, "failed to set guardian ID")
-	}
-	if err := manager.Set("key_name", keyName); err != nil {
-		return errors.Wrap(err, "failed to set key name")
-	}
-	if err := manager.Set("keyring_backend", keyringBackend); err != nil {
-		return errors.Wrap(err, "failed to set keyring backend")
-	}
-
-	// Set keyring directory if provided (optional flag)
-	if flagKeyringDir != "" {
-		if err := manager.Set("keyring_dir", flagKeyringDir); err != nil {
-			return errors.Wrap(err, "failed to set keyring directory")
-		}
-	}
-
-	// Only the hash reaches the file; the plaintext is gone by this point unless
-	// it was generated, in which case it is printed once in the summary below.
-	if dashboardHash != "" {
-		if err := manager.Set("dashboard_password_hash", dashboardHash); err != nil {
-			return errors.Wrap(err, "failed to set dashboard password hash")
-		}
-	}
-
-	// Set the guardian address if we resolved it earlier
-	if guardianAddress != "" {
-		if err := manager.Set("guardian_address", guardianAddress); err != nil {
-			return errors.Wrap(err, "failed to set guardian address")
-		}
-	}
-
-	// Write passphrase file now that all steps are complete
-	if passphraseForFile != "" {
-		keyDir := manager.GetKeyDirectory()
-		passphraseFile := filepath.Join(keyDir, "keyring_passphrase")
-
-		// Ensure directory exists
-		if err := manager.EnsureDirectoriesExist(); err != nil {
-			return errors.Wrap(err, "failed to create guardian directory")
-		}
-
-		if err := custody.WritePassphraseFile(passphraseFile, passphraseForFile); err != nil {
-			return errors.Wrap(err, "failed to create passphrase file")
-		}
-		// Set the passphrase file path in config
-		if err := manager.Set("keyring_passphrase", passphraseFile); err != nil {
-			return errors.Wrap(err, "failed to set keyring passphrase file")
-		}
-	}
-
-	// Save the configuration (all at once)
 	if err := manager.Save(); err != nil {
 		return errors.Wrap(err, "failed to initialize config")
 	}
 
-	// Success summary with colors
+	reportInitSummary(u, manager, configPath, settings, generatedDashboardPassword)
+	return nil
+}
+
+// collectSigningKeyName resolves the keyring key name, which doubles as the
+// guardian's identifier. An unattended run never prompts: --key-name is
+// required by validateUnattended before this is reached.
+func collectSigningKeyName(u *ui.Printer, flags initFlags) (string, error) {
+	if flags.keyName != "" {
+		return flags.keyName, nil
+	}
+
+	u.Step("🔑 Step 1: Blockchain Signing Key")
+	u.TextLn(ui.Indent1 + "Guardians need a signing key for blockchain transactions (registration, reveals, etc.)")
+	u.TextLn(ui.Indent1 + "This key will also serve as your guardian identifier.\n")
+
+	u.Note(ui.Indent1+"Create the signing key with guardianctl (using the %s keyring):\n", flags.backend())
+
+	u.TextLn(ui.Indent2 + "# Create a new signing key (shows the 24-word backup mnemonic once)")
+	u.Text(ui.Indent2)
+	u.Command("guardianctl wallet create --name [key-name]\n")
+	u.TextLn(ui.Indent2 + "# Or restore an existing key from its 24 words")
+	u.Text(ui.Indent2)
+	u.Command("guardianctl wallet import-from-mnemonic --name [key-name]\n")
+	u.TextLn(ui.Indent2 + "# View your wallet address")
+	u.Text(ui.Indent2)
+	u.Command("guardianctl wallet show-address --name [key-name]\n")
+
+	u.Note(ui.Indent1 + "Important notes:")
+	u.TextLn(ui.Indent2 + "• Back up your 24-word mnemonic securely")
+	u.TextLn(ui.Indent2 + "• You'll need VEIL for gas fees, the entry fee and any deposit")
+	u.TextLn(ui.Indent2 + "• The key name must exist in the guardian's keyring")
+	u.TextLn(ui.Indent2 + "• This key name will also be used as your guardian identifier\n")
+
+	keyName := u.PromptInput("🗝️  Enter keyring key name: ")
+	if keyName == "" {
+		return "", errors.New("keyring key name is required")
+	}
+	u.Note(ui.Indent1 + "─────────────────────────────────────────────────\n")
+	return keyName, nil
+}
+
+// collectKeyringPassphrase resolves the keyring passphrase, which is what lets
+// the daemon sign confirmations and reveals unattended. Empty is a valid
+// outcome: only the file backend needs one, and an operator may decline.
+func collectKeyringPassphrase(u *ui.Printer, flags initFlags, backend string, interactive bool) (string, error) {
+	if flags.keyringPassphrase != "" {
+		return flags.keyringPassphrase, nil
+	}
+	if backend != "file" || !interactive {
+		return "", nil
+	}
+
+	u.EmptyLine()
+	u.Step("🔐 Step 2: Keyring Passphrase Setup")
+	u.TextLn(ui.Indent1 + "Guardian operations require automatic transaction signing for confirming")
+	u.TextLn(ui.Indent1 + "and revealing secret shares. A passphrase file enables these automated")
+	u.TextLn(ui.Indent1 + "transactions without manual intervention.\n")
+
+	u.Text(ui.Indent1 + "🔑 Enter your keyring passphrase: ")
+	passphraseBytes, err := u.ReadPassword()
+	if err != nil {
+		u.Warning("Could not read passphrase: %v", err)
+		return "", nil
+	}
+	passphrase := strings.TrimSpace(string(passphraseBytes))
+	if passphrase != "" {
+		u.Success("Passphrase collected")
+	}
+	return passphrase, nil
+}
+
+// resolveInitAddress derives the guardian's address from the signing key, which
+// needs the passphrase to open the keyring. An unattended run treats failure as
+// fatal: the address it would have written is the guardian's identity on chain.
+func resolveInitAddress(u *ui.Printer, manager *config.Manager, flags initFlags, s initSettings, interactive bool) (string, error) {
+	if s.keyringPassphrase == "" {
+		return "", nil
+	}
+	if interactive {
+		u.Step(ui.Indent1 + "🔍 Resolving guardian address from key...")
+	}
+
+	address := resolveAddressWithPassword(manager, s.keyName, s.keyringBackend, s.keyringPassphrase, flags.keyringDir)
+	switch {
+	case !interactive && address == "":
+		return "", errors.Errorf("failed to resolve guardian address from key-name '%s' with provided passphrase - please verify the key exists and passphrase is correct", s.keyName)
+	case !interactive:
+		u.Success("Guardian address resolved: %s", address)
+	case address != "":
+		u.Success("Guardian address: %s", address)
+		u.Note(ui.Indent1 + "─────────────────────────────────────────────────")
+	default:
+		u.Warning("Could not resolve guardian address")
+		u.Note(ui.Indent1 + "─────────────────────────────────────────────────")
+	}
+	return address, nil
+}
+
+// collectEncryptionKey resolves the share-encryption public key, generating the
+// keypair behind it when asked. Interactively, a generation failure or a
+// malformed key is reported and the wizard continues without one — the operator
+// is told how to set it later, which beats losing the rest of the setup.
+func collectEncryptionKey(u *ui.Printer, manager *config.Manager, flags initFlags, interactive bool) (string, error) {
+	switch {
+	case flags.encryptionKey != "":
+		return flags.encryptionKey, nil
+
+	case flags.autoGenerateKey:
+		publicKey, err := runCreateEncryptionKey(manager, flags.encKeyPassphrase)
+		if err != nil {
+			return "", errors.Wrap(err, "auto key generation failed")
+		}
+		if err := writeEncryptionKeyPassphraseFile(manager, flags.encKeyPassphrase); err != nil {
+			return "", errors.Wrap(err, "failed to store share-key passphrase file")
+		}
+		return publicKey, nil
+
+	case !interactive:
+		// Unreachable: validateUnattended requires one of the two above.
+		return "", errors.New("encryption key required: use --encryption-public-key or --auto-generate-key")
+	}
+
+	u.EmptyLine()
+	u.Step("🔑 Step 3: Encryption Key Setup")
+	u.TextLn(ui.Indent1 + "Guardians need encryption keys to securely receive and decrypt secret shares.")
+	u.TextLn(ui.Indent1 + "You can either provide an existing public key or generate new keys.\n")
+
+	u.Note(ui.Indent1 + "Options:")
+	u.TextLn(ui.Indent2 + "1. Generate new keys automatically (recommended for new guardians)")
+	u.TextLn(ui.Indent2 + "2. Provide existing public key (if you already have encryption keys)\n")
+
+	choice := strings.ToLower(strings.TrimSpace(
+		u.PromptInput(ui.Indent1 + "🔀 Generate new keys? [Y/n]: ")))
+
+	var publicKey string
+	if choice == "" || choice == "y" || choice == "yes" {
+		var err error
+		if publicKey, err = generateKeyInteractively(u, manager); err != nil {
+			return "", err
+		}
+	} else {
+		publicKey = u.PromptInput("\n" + ui.Indent1 + "🔑 Enter your encryption public key (64 hex characters): ")
+		if len(publicKey) != 64 {
+			u.Warning("Invalid key length: expected 64 characters, got %d", len(publicKey))
+			u.Note(ui.Indent1 + "You can set the correct encryption key later with:" + ui.Indent1)
+			u.Command("guardianctl config set encryption-public-key <64-hex-chars>\n\n")
+			publicKey = ""
+		} else {
+			u.Success("Using provided encryption key: %s...\n", publicKey[:8])
+		}
+	}
+
+	if publicKey != "" {
+		u.Note(ui.Indent1 + "─────────────────────────────────────────────────\n")
+	}
+	return publicKey, nil
+}
+
+// generateKeyInteractively generates the share keypair, encrypted at rest, and
+// reports where every piece of it landed. "" means generation failed and the
+// operator was told how to set the key later.
+func generateKeyInteractively(u *ui.Printer, manager *config.Manager) (string, error) {
+	u.EmptyLine()
+	u.Note(ui.Indent1 + "The private key is stored encrypted at rest. Choose a passphrase;")
+	u.Note(ui.Indent1 + "it is kept in a 0600 file beside the key so the daemon can run unattended.")
+	passphrase, err := u.NewPassphrase("share-encryption private key")
+	if err != nil {
+		return "", errors.Wrap(err, "failed to read share-key passphrase")
+	}
+
+	u.TextLn("\n" + ui.Indent1 + "⚡ Generating encryption keys...")
+
+	publicKey, err := runCreateEncryptionKey(manager, passphrase)
+	if err != nil {
+		u.Warning("Key generation failed: %v", err)
+		u.Note(ui.Indent1 + "You can set the encryption key later with:" + ui.Indent1)
+		u.Command("guardianctl config set encryption-public-key <64-hex-chars>\n\n")
+		return "", nil
+	}
+	if err := writeEncryptionKeyPassphraseFile(manager, passphrase); err != nil {
+		return "", errors.Wrap(err, "failed to store share-key passphrase file")
+	}
+
+	u.Success("Encryption keys generated successfully!")
+	privateKeyPath := manager.GetPrivateKeyPath()
+	u.TextLn(ui.Indent1 + "📁 Key locations:")
+	u.TextLn(ui.Indent2 + "• Private key: " + privateKeyPath + " (encrypted at rest — keep it SECRET!)")
+	u.TextLn(ui.Indent2 + "• Passphrase:  " + custody.SiblingPassphrasePath(privateKeyPath))
+	u.TextLn(ui.Indent2 + "• Public key:  " + manager.GetPublicKeyPath())
+	u.TextLn(ui.Indent2 + "• Public key hex: " + publicKey)
+	u.Warning("CRITICAL: Back up your private key securely!")
+	u.TextLn(ui.Indent2 + "• Run 'guardianctl key backup' after registration for a portable encrypted bundle")
+	u.TextLn(ui.Indent2 + "• Without the key, you cannot decrypt shares sent to you")
+	u.TextLn(ui.Indent2 + "• Lost keys prevent participation in reveals, resulting in slashing penalties\n")
+	return publicKey, nil
+}
+
+// applyInitSettings writes everything the steps collected. This is the only
+// place init touches the configuration, so a step that fails leaves nothing
+// half-applied behind it.
+func applyInitSettings(manager *config.Manager, s initSettings) error {
+	values := map[string]string{
+		// The keyring key name doubles as the guardian's identifier.
+		"guardian_id":     s.keyName,
+		"key_name":        s.keyName,
+		"keyring_backend": s.keyringBackend,
+	}
+	if s.encryptionPublicKey != "" {
+		values["encryption_public_key"] = s.encryptionPublicKey
+		values["encryption_private_key_path"] = manager.GetPrivateKeyPath()
+	}
+	if s.keyringDir != "" {
+		values["keyring_dir"] = s.keyringDir
+	}
+	if s.guardianAddress != "" {
+		values["guardian_address"] = s.guardianAddress
+	}
+	// Only the hash reaches the file; the plaintext is gone by now unless it was
+	// generated, in which case the summary prints it once.
+	if s.dashboardHash != "" {
+		values["dashboard_password_hash"] = s.dashboardHash
+	}
+
+	for key, value := range values {
+		if err := manager.Set(key, value); err != nil {
+			return errors.Wrapf(err, "failed to set %s", key)
+		}
+	}
+
+	if s.keyringPassphrase == "" {
+		return nil
+	}
+	if err := manager.EnsureDirectoriesExist(); err != nil {
+		return errors.Wrap(err, "failed to create guardian directory")
+	}
+	passphraseFile := filepath.Join(manager.GetKeyDirectory(), "keyring_passphrase")
+	if err := custody.WritePassphraseFile(passphraseFile, s.keyringPassphrase); err != nil {
+		return errors.Wrap(err, "failed to create passphrase file")
+	}
+	if err := manager.Set("keyring_passphrase", passphraseFile); err != nil {
+		return errors.Wrap(err, "failed to set keyring passphrase file")
+	}
+	return nil
+}
+
+// reportInitSummary says what was written and what to do next.
+func reportInitSummary(u *ui.Printer, manager *config.Manager, configPath string, s initSettings, generatedDashboardPassword string) {
 	u.EmptyLine()
 	u.Separator("    Configuration Initialized Successfully")
 	u.EmptyLine()
@@ -438,25 +508,22 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		u.EmptyLine()
 	}
 
-	// Configuration summary
 	u.Step("📋 Configuration Summary:")
 	u.Text(ui.Indent1 + "📁 Config File:           ")
 	u.Path("%s\n", configPath)
 	u.Text(ui.Indent1 + "🗝️  Guardian Identity:      ")
-	u.Value("%s\n", keyName)
+	u.Value("%s\n", s.keyName)
 	u.Text(ui.Indent1 + "🔐 Keyring Backend:        ")
-	u.Value("%s\n", keyringBackend)
+	u.Value("%s\n", s.keyringBackend)
 	u.Text(ui.Indent1 + "🔑 Encryption Public Key:  ")
-	if encryptionKey != "" {
-		u.Value("%s\n", encryptionKey)
+	if s.encryptionPublicKey != "" {
+		u.Value("%s\n", s.encryptionPublicKey)
 		u.Text(ui.Indent1 + "🔒 Encryption Private Key: ")
-		privateKeyPath := manager.GetPrivateKeyPath()
-		u.Path("%s\n", privateKeyPath)
+		u.Path("%s\n", manager.GetPrivateKeyPath())
 	} else {
 		u.Note("(empty - set later with 'guardianctl config set encryption-public-key <key>')")
 	}
 
-	// Next steps with colors
 	u.Step("🚀 Next Steps:")
 	u.Text(ui.Indent1 + "• ")
 	u.Command("guardianctl config list")
@@ -465,8 +532,6 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 	u.Text(ui.Indent1 + "• ")
 	u.Command("guardianctl register")
 	u.TextLn(" - register your guardian with the network\n")
-
-	return nil
 }
 
 // collectDashboardPassword resolves the dashboard password during init and
