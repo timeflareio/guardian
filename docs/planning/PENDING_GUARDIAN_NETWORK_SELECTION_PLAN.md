@@ -4,7 +4,7 @@
 every guardian comes out of setup pointed at the local devnet under the devnet's
 chain id. Pre-testnet: the first public network is the moment this becomes an
 operator-facing defect rather than a latent one.
-**Status**: ready (4 August 2026)
+**Status**: in progress (4 August 2026) — `worktree-network-selection`
 **Origin**: [PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md](PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md)
 finding 22 and its `chain_id` docs item; the chain's network registry
 (`chain/networks.json`, `chain/docs/guides/NETWORKS.md`); scope ruled by the
