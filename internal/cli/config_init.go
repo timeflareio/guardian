@@ -152,7 +152,7 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		u.TextLn(ui.Indent1 + "Guardians need a signing key for blockchain transactions (registration, reveals, etc.)")
 		u.TextLn(ui.Indent1 + "This key will also serve as your guardian identifier.\n")
 
-		u.Note(ui.Indent1+"Create the signing key with guardiand (using the %s keyring):\n", keyringBackend)
+		u.Note(ui.Indent1+"Create the signing key with guardianctl (using the %s keyring):\n", keyringBackend)
 
 		u.TextLn(ui.Indent2 + "# Create a new signing key (shows the 24-word backup mnemonic once)")
 		u.Text(ui.Indent2)
