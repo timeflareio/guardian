@@ -219,12 +219,20 @@ govulncheck-gated:
 # handling). The chain owns them; this is a vendored pinned copy so the tests
 # stay offline and hermetic, exactly as §5.2 of the migration plan describes.
 #
-# The pin is a chain TAG and the files are fetched from the tagged source tree
-# rather than from a release asset. That works today, needs no release workflow
-# in the chain repo, and the tag is itself the integrity guarantee — a tag is
-# immutable unless someone moves it, which is the same trust assumption a
-# release asset carries. If the chain later publishes a vectors tarball, this can
-# switch to it, but nothing here requires that.
+# The pin is a chain TAG, and the files come from that release's vectors tarball
+# and its per-file SHA-256 manifest — the same mechanism the SDK uses for both of
+# its corpora, so there is one way to consume vectors across the whole graph
+# rather than two.
+#
+# Fetching from the tagged source tree instead would work and needs no release,
+# but it couples this repository to the chain's internal directory layout
+# (`testdata/vectors/…`), which nothing promises to keep stable. A release asset
+# is a published contract; a path inside someone else's tree is not. The manifest
+# also states the expected digest independently of the file, so a truncated or
+# substituted download fails loudly rather than comparing equal to itself.
+#
+# The cost is real and worth naming: a chain tag is only pinnable here if it
+# carries a release. chain v0.0.1 does not, which is why the floor is v0.0.2.
 #
 # The five PRIMITIVE vectors are a different corpus, owned and published by
 # timeflareio/crypto. This daemon asserts none of them — it consumes the
@@ -232,9 +240,8 @@ govulncheck-gated:
 
 CHAIN_VECTORS_VERSION := $(shell cat testdata/vectors/CHAIN_VECTORS_VERSION 2>/dev/null)
 CHAIN_VECTORS_FILES   := wallet_derivation client_conventions
-CHAIN_RAW             := https://raw.githubusercontent.com/timeflareio/chain
 
-## verify the vendored chain vectors match the pinned chain tag
+## verify the vendored chain vectors match the pinned chain release
 vectors-verify:
 	@set -e; \
 	if [ -z "$(CHAIN_VECTORS_VERSION)" ]; then \
@@ -242,16 +249,18 @@ vectors-verify:
 	fi; \
 	echo "--> Verifying vendored chain vectors against chain@$(CHAIN_VECTORS_VERSION)"; \
 	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	gh release download "$(CHAIN_VECTORS_VERSION)" --repo timeflareio/chain \
+		--pattern 'timeflare-chain-vectors-*.sha256' --dir "$$tmp" >/dev/null 2>&1 || { \
+		echo "❌ could not read chain@$(CHAIN_VECTORS_VERSION)'s vectors manifest."; \
+		echo "   Does that tag carry a release? Tags before v0.0.2 do not."; exit 1; }; \
 	fail=0; \
 	for v in $(CHAIN_VECTORS_FILES); do \
-		if ! curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors \
-			-o "$$tmp/$$v.json" \
-			"$(CHAIN_RAW)/$(CHAIN_VECTORS_VERSION)/testdata/vectors/$$v.json"; then \
-			echo "❌ could not fetch $$v.json from chain@$(CHAIN_VECTORS_VERSION)"; fail=1; continue; \
+		want=$$(grep -E "[ /]$$v\.json$$" "$$tmp"/*.sha256 | awk '{print $$1}'); \
+		if [ -z "$$want" ]; then \
+			echo "❌ $$v.json is absent from chain@$(CHAIN_VECTORS_VERSION)'s manifest"; fail=1; continue; \
 		fi; \
-		if ! cmp -s "$$tmp/$$v.json" "testdata/vectors/$$v.json"; then \
-			echo "❌ $$v.json differs from chain@$(CHAIN_VECTORS_VERSION)"; fail=1; \
-		fi; \
+		got=$$(shasum -a 256 "testdata/vectors/$$v.json" | awk '{print $$1}'); \
+		[ "$$want" = "$$got" ] || { echo "❌ $$v.json differs from chain@$(CHAIN_VECTORS_VERSION)"; fail=1; }; \
 	done; \
 	if [ $$fail -ne 0 ]; then \
 		echo "   Run 'make vectors-sync' — never hand-edit testdata/vectors/."; \
@@ -261,7 +270,7 @@ vectors-verify:
 	fi; \
 	echo "✅ Vendored chain vectors match chain@$(CHAIN_VECTORS_VERSION)"
 
-## refresh the vendored chain vectors from a chain tag (CHAIN_VECTORS_VERSION=vX.Y.Z)
+## refresh the vendored chain vectors from a chain release (CHAIN_VECTORS_VERSION=vX.Y.Z)
 vectors-sync:
 	@set -e; \
 	case "$(CHAIN_VECTORS_VERSION)" in \
@@ -269,10 +278,18 @@ vectors-sync:
 		*) echo "❌ pass a chain tag, e.g. make vectors-sync CHAIN_VECTORS_VERSION=v0.1.0"; exit 1;; \
 	esac; \
 	echo "--> Syncing chain vectors from chain@$(CHAIN_VECTORS_VERSION)"; \
+	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	gh release download "$(CHAIN_VECTORS_VERSION)" --repo timeflareio/chain \
+		--pattern 'timeflare-chain-vectors-*.tar.gz' \
+		--pattern 'timeflare-chain-vectors-*.sha256' --dir "$$tmp"; \
+	tar -xzf "$$tmp"/timeflare-chain-vectors-*.tar.gz -C "$$tmp"; \
 	for v in $(CHAIN_VECTORS_FILES); do \
-		curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors \
-			-o "testdata/vectors/$$v.json" \
-			"$(CHAIN_RAW)/$(CHAIN_VECTORS_VERSION)/testdata/vectors/$$v.json"; \
+		src=$$(find "$$tmp" -name "$$v.json" -print -quit); \
+		[ -n "$$src" ] || { echo "❌ $$v.json absent from the chain corpus"; exit 1; }; \
+		want=$$(grep -E "[ /]$$v\.json$$" "$$tmp"/timeflare-chain-vectors-*.sha256 | awk '{print $$1}'); \
+		got=$$(shasum -a 256 "$$src" | awk '{print $$1}'); \
+		[ "$$want" = "$$got" ] || { echo "❌ $$v.json fails the chain's manifest"; exit 1; }; \
+		cp "$$src" "testdata/vectors/$$v.json"; \
 	done; \
 	echo "$(CHAIN_VECTORS_VERSION)" > testdata/vectors/CHAIN_VECTORS_VERSION
 	@echo "✅ Synced — review the diff, then run 'make test'"
