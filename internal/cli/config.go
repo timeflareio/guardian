@@ -241,20 +241,12 @@ func runConfigList(cmd *cobra.Command, args []string) error {
 	u.Text("Config file: ")
 	u.Path("%s\n\n", manager.GetConfigPath())
 
-	// Define group order for consistent display
-	groupOrder := []string{
-		"Network Configuration",
-		"Guardian Identity & Keys",
-		"Staking & Economics",
-		"Networking & Timeouts",
-		"Guardian Service",
-		"Registration Defaults",
-		"Blockchain Integration",
-		"Monitoring & Observability",
-		"File Paths & Storage",
-		"Performance",
-		"Operational",
-	}
+	// Ask the registry for the display order rather than listing it here. A
+	// second copy of these names drifted from the registry's once already, and
+	// because an unrecognised name is skipped rather than reported, every group
+	// silently vanished from the output while the header and footer still
+	// printed. config doctor never had the bug — it has always read this.
+	groupOrder := config.GroupOrder()
 
 	for i, groupName := range groupOrder {
 		group, exists := groups[groupName]
