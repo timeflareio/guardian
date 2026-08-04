@@ -12,7 +12,6 @@ import (
 	gogotypes "github.com/cosmos/gogoproto/types"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	secretstypes "github.com/timeflareio/chain/x/secrets/types"
 	"github.com/timeflareio/guardian/internal/config"
@@ -35,12 +34,12 @@ type Client struct {
 }
 
 // NewClient dials the configured gRPC endpoint and opens the keyring for
-// signing. The dial is lazy (grpc.NewClient) — connectivity is verified by
-// the first call (or Ping).
+// signing. The dial is lazy (see Dial) — connectivity is verified by the first
+// call (or Ping).
 func NewClient(cfg *config.Config, logger *zap.Logger) (*Client, error) {
-	conn, err := grpc.NewClient(cfg.GRPCEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := Dial(cfg, logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create gRPC client for %s: %w", cfg.GRPCEndpoint, err)
+		return nil, err
 	}
 
 	signer, err := NewSigner(cfg, conn, logger)

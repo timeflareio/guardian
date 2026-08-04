@@ -13,6 +13,15 @@ import (
 	"github.com/timeflareio/guardian/internal/guardian"
 )
 
+// entryFee renders the one-off registration fee as the wire contract states it,
+// in the base units every other amount in this configuration takes. Derived
+// rather than written out: a figure copied into operator-facing text is wrong the
+// moment a chain upgrade retunes it, and wrong in the place an operator is most
+// likely to trust it.
+func entryFee() string {
+	return strconv.FormatInt(secretstypes.EntryFeeAmount, 10) + secretstypes.DefaultDenom
+}
+
 // NewRegisterCmd creates the register command
 func NewRegisterCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -27,8 +36,9 @@ anything is sent.
 IMPORTANT: This command only handles NEW registrations. Use 'guardianctl update'
 for changes to an existing registration.
 
-Registration charges the protocol entry fee (1,000 VEIL, routed to validators) in
-addition to the float deposit. The deposit is your working capital: a bond
+Registration charges the protocol entry fee (` + entryFee() + `, routed through the
+chain's fee split) in addition to the float deposit, and the fee is never
+returned. The deposit is your working capital: a bond
 (rate × distance × bump × your bond multiplier k) is locked from it for each secret you accept
 and returned at settlement.
 
@@ -53,7 +63,7 @@ Note: Uses encryption public key from configuration file.`,
 	}
 
 	// Command-specific flags (all optional — config defaults apply)
-	cmd.Flags().String("stake-amount", "", "initial float deposit (default: configured stake_amount; the 1,000 VEIL entry fee is charged separately and paid to validators)")
+	cmd.Flags().String("stake-amount", "", "initial float deposit (default: configured stake_amount; the "+entryFee()+" entry fee is charged separately and routed through the chain's fee split)")
 	cmd.Flags().Int64("available-from", 0, "blocks from current when guardian becomes available (default: 0 = immediate)")
 	cmd.Flags().String("available-until", "", "blocks from current when guardian stops being available (default: chain maximum)")
 	cmd.Flags().Bool("accepting-secrets", true, "whether guardian accepts new secret assignments (default: true)")

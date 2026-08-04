@@ -13,11 +13,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/timeflareio/guardian/internal/cli/ui"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	secretstypes "github.com/timeflareio/chain/x/secrets/types"
 	crypto "github.com/timeflareio/crypto/go"
+	"github.com/timeflareio/guardian/internal/chain"
 	"github.com/timeflareio/guardian/internal/config"
 	"github.com/timeflareio/guardian/internal/custody"
 )
@@ -437,9 +436,9 @@ func runKeyRestore(cmd *cobra.Command, args []string) error {
 // query-only, no keyring involved (restore may run before the keyring
 // exists).
 func queryGuardianRecord(cfg *config.Config, address string) (*secretstypes.Guardian, error) {
-	conn, err := grpc.NewClient(cfg.GRPCEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := chain.Dial(cfg, nil)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create gRPC client for %s", cfg.GRPCEndpoint)
+		return nil, err
 	}
 	defer func() { _ = conn.Close() }()
 

@@ -44,7 +44,63 @@ func newFixture(t *testing.T) *fixture {
 	// keeps a passphrase prompt out of the picture.
 	t.Setenv("GUARDIAN_KEYRING_BACKEND", "test")
 	t.Setenv("GUARDIAN_KEYRING_DIR", dir)
+	// config init selects a network from the published list, so every test needs
+	// one to read. Pointing at a file keeps the suite off the network while still
+	// driving the real selection path — the same arrangement the devnet uses.
+	g.useRegistry(testRegistry)
 	return g
+}
+
+// testRegistry mirrors the shape the chain publishes, with one network of each
+// kind that matters here: loopback, remote, and one a guardian cannot use.
+const testRegistry = `{
+  "default": "devnet",
+  "addressPrefix": "tmflr",
+  "networks": [
+    {
+      "id": "devnet", "label": "Local devnet", "chainId": "timeflare-test", "local": true,
+      "endpoints": {
+        "rpc": ["http://localhost:26657"],
+        "rest": ["http://localhost:1317"],
+        "grpc": ["localhost:9090"]
+      }
+    },
+    {
+      "id": "testnet", "label": "Public testnet", "chainId": "timeflare-testnet-1", "local": false,
+      "endpoints": {
+        "rpc": ["https://rpc.testnet.example.org"],
+        "rest": ["https://api.testnet.example.org"],
+        "grpc": ["grpc.testnet.example.org:443"]
+      }
+    },
+    {
+      "id": "restonly", "label": "REST only", "chainId": "timeflare-restonly", "local": false,
+      "endpoints": {
+        "rpc": ["https://rpc.restonly.example.org"],
+        "rest": ["https://api.restonly.example.org"],
+        "grpc": []
+      }
+    }
+  ]
+}`
+
+// useRegistry points the network list at a file holding the given body. An
+// invalid body is as useful to a test as a valid one — a guardian being set up
+// has to survive a list it cannot read.
+func (g *fixture) useRegistry(body string) {
+	g.t.Helper()
+	path := filepath.Join(g.offhost, "networks.json")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		g.t.Fatalf("writing the test registry: %v", err)
+	}
+	g.t.Setenv("GUARDIAN_NETWORK_LIST_URL", path)
+}
+
+// unreachableRegistry points the network list at nothing, for the paths that
+// have to cope with a list they cannot read.
+func (g *fixture) unreachableRegistry() {
+	g.t.Helper()
+	g.t.Setenv("GUARDIAN_NETWORK_LIST_URL", filepath.Join(g.offhost, "absent.json"))
 }
 
 // run executes a command and returns everything it printed. stdin supplies
