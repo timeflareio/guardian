@@ -272,3 +272,29 @@ func TestListAllGroupedMarksDefaults(t *testing.T) {
 
 	assert.True(t, groups["Monitoring"]["log_format"].IsDefault)
 }
+
+// Where the key files land is decided by two rules that used to be spelled out
+// separately in each getter. A guardian pointed at its own --config-path has to
+// keep its keys beside that configuration, and an operator who names a keyring
+// directory has to win over that.
+func TestKeyPathsFollowTheConfigurationsOwnDirectory(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(filepath.Join(dir, "config.yaml"))
+
+	assert.Equal(t, dir, m.GetKeyDirectory(),
+		"a configuration outside the default directory should take its keys with it")
+	assert.Equal(t, filepath.Join(dir, DefaultPrivateKeyFileName), m.GetPrivateKeyPath())
+	assert.Equal(t, filepath.Join(dir, DefaultPublicKeyFileName), m.GetPublicKeyPath())
+
+	// An explicitly named keyring directory outranks the configuration's own.
+	elsewhere := t.TempDir()
+	require.NoError(t, m.Set("keyring_dir", elsewhere))
+	assert.Equal(t, elsewhere, m.GetKeyDirectory())
+	assert.Equal(t, filepath.Join(elsewhere, DefaultPrivateKeyFileName), m.GetPrivateKeyPath())
+
+	// As does an explicitly named private key path, over both.
+	named := filepath.Join(t.TempDir(), "share.key")
+	require.NoError(t, m.Set("encryption_private_key_path", named))
+	assert.Equal(t, named, m.GetPrivateKeyPath())
+	assert.Equal(t, elsewhere, m.GetKeyDirectory(), "the key directory is unaffected by the key path")
+}

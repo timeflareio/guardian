@@ -170,42 +170,39 @@ func (m *Manager) GetConfigDirectory() string {
 	return filepath.Dir(m.configPath)
 }
 
-// GetKeyDirectory returns the directory where keys should be stored
-// This defaults to the same directory as the config file for custom paths,
-// or uses the keyring_dir config value if set, or falls back to config directory
-func (m *Manager) GetKeyDirectory() string {
-	// If keyring_dir is explicitly set in config and not the default, use it
-	if m.config.KeyringDir != "" && m.config.KeyringDir != expandPath(DefaultGuardianDir) {
-		return m.config.KeyringDir
-	}
-
-	// For custom config paths, default to same directory as config
-	configDir := m.GetConfigDirectory()
-	defaultConfigDir := filepath.Dir(expandPath(DefaultConfigRelativePath))
-
-	if configDir != defaultConfigDir {
-		return configDir
-	}
-
-	// For default config path, use the configured keyring dir or default
-	if m.config.KeyringDir != "" {
-		return m.config.KeyringDir
-	}
-
-	return expandPath(DefaultGuardianDir)
+// chosen reports whether a path was picked deliberately rather than left at its
+// default. Both path rules below turn on this one question, and asking it in one
+// place is what stops the two of them answering it differently.
+//
+// The limit is worth stating: a value set by hand to exactly the default reads
+// as unchosen. That only matters for a guardian whose configuration lives
+// outside the default directory, where an explicitly-default key path is
+// resolved beside the configuration instead.
+func chosen(value, defaultValue string) bool {
+	return value != "" && value != defaultValue
 }
 
-// GetPrivateKeyPath returns the path where the private key should be stored
-func (m *Manager) GetPrivateKeyPath() string {
-	// If explicitly set in config, use that
-	if m.config.EncryptionPrivateKeyPath != "" {
-		defaultPath := expandPath(DefaultGuardianDir + "/" + DefaultPrivateKeyFileName)
-		if m.config.EncryptionPrivateKeyPath != defaultPath {
-			return m.config.EncryptionPrivateKeyPath
-		}
+// GetKeyDirectory returns the directory holding the keyring and key files:
+// keyring_dir when the operator chose one, otherwise the configuration's own
+// directory so a guardian pointed at a non-default --config-path is
+// self-contained, otherwise the default guardian directory.
+func (m *Manager) GetKeyDirectory() string {
+	defaultKeyDir := DefaultConfig().KeyringDir
+	switch {
+	case chosen(m.config.KeyringDir, defaultKeyDir):
+		return m.config.KeyringDir
+	case m.GetConfigDirectory() != filepath.Dir(DefaultConfigPath()):
+		return m.GetConfigDirectory()
+	default:
+		return defaultKeyDir
 	}
+}
 
-	// Otherwise derive from key directory
+// GetPrivateKeyPath returns the path where the private key should be stored.
+func (m *Manager) GetPrivateKeyPath() string {
+	if chosen(m.config.EncryptionPrivateKeyPath, DefaultConfig().EncryptionPrivateKeyPath) {
+		return m.config.EncryptionPrivateKeyPath
+	}
 	return filepath.Join(m.GetKeyDirectory(), DefaultPrivateKeyFileName)
 }
 
