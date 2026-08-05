@@ -4,10 +4,13 @@
 the conventional Go layout that makes the separation enforceable rather than
 merely intended.*
 
-> **Status: in progress** — created and ruled 3 August 2026; all five phases
-> executed on `worktree-daemon-surface-separation` the same day. What remains is
-> the chain-side half of §4 (see *Residual*, below), which is another
-> repository's change and not this branch's to make.
+> **Status: done — 5 August 2026.** Created and ruled 3 August 2026; all five
+> phases executed on `worktree-daemon-surface-separation` and merged as #8, then
+> released as `v0.0.4`. The chain-side residual below is closed by
+> `timeflareio/chain#22`, verified against the released pair: the devnet
+> configures and registers through `guardianctl`, runs `guardiand` without
+> `--accept`, and its full lifecycle plus 53 scenario assertions pass with no
+> local overrides.
 > **Priority**: P2 — layout and separation debt. Cheapest to pay now (nothing
 > imports this module, so no consumer is disturbed), and it is what unblocks the
 > test coverage standing between an operator and key loss. Argued below (§1) why
@@ -355,6 +358,19 @@ split pair:
 Both are confirmed against the chain checkout rather than assumed. Neither is
 this branch's to make: they are a companion pull request in that repository,
 and until it lands the compose devnet needs the previous guardian image.
+
+**Closed by `timeflareio/chain#22`** (merged 5 August 2026), which found more than
+the two call sites listed above. Twenty-three lines needed retargeting, not two:
+the rest were `config init`/`config set`, `set-dashboard-password` and the
+scenario suite's `rotate-key`, each of which would have failed later and less
+legibly than a registration failure.
+
+That PR also had to be corrected after it was written. It was drafted by reading
+this branch, and by the time it was used `main` had moved twenty-four commits on —
+`config set-dashboard-password` had been deleted outright by the unauthenticated-
+dashboard change, so the PR's careful retarget of it pointed at a verb that no
+longer existed. Reading a branch and treating it as the contract is the same
+mistake as reading a runbook instead of the repository it describes.
 
 ## 5. Cross-component sweep
 
