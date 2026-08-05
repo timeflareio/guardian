@@ -1184,7 +1184,7 @@ are load-bearing.
   length rather than by anything an attacker controls (`keyfile.go:37-62`).
 - Share encryption uses the repo's pinned primitives correctly: ephemeral-static
   X25519, per-message random nonce, ChaCha20-Poly1305, domain-separated
-  derivation, byte-pinned by `testdata/vectors/`. Delegating the small-order
+  derivation, byte-pinned by the corpus in `timeflareio/crypto`. Delegating the small-order
   check to `curve25519.X25519` instead of a hand-maintained blacklist is right.
 - HMAC comparison is constant-time with a length pre-check
   (`reveal.go:242-247`).

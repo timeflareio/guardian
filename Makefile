@@ -91,7 +91,7 @@ build-binary: go-build-binary
 clean: go-format go-lint go-imports go-vet
 
 ## verify all code quality standards (read-only checks)
-verify: go-format-check go-lint-check go-imports-check go-vet verify-boundaries verify-pins vectors-verify
+verify: go-format-check go-lint-check go-imports-check go-vet verify-boundaries verify-pins
 
 ## format Go code
 format: go-format
@@ -235,65 +235,14 @@ govulncheck-gated:
 # The cost is real and worth naming: a chain tag is only pinnable here if it
 # carries a release. chain v0.0.1 does not, which is why the floor is v0.0.2.
 #
-# The five PRIMITIVE vectors are a different corpus, owned and published by
-# timeflareio/crypto. This daemon asserts none of them — it consumes the
-# primitives as a Go module and lets that module's own suites prove them.
-
-CHAIN_VECTORS_VERSION := $(shell cat testdata/vectors/CHAIN_VECTORS_VERSION 2>/dev/null)
-CHAIN_VECTORS_FILES   := wallet_derivation client_conventions
-
-## verify the vendored chain vectors match the pinned chain release
-vectors-verify:
-	@set -e; \
-	if [ -z "$(CHAIN_VECTORS_VERSION)" ]; then \
-		echo "❌ testdata/vectors/CHAIN_VECTORS_VERSION is missing or empty"; exit 1; \
-	fi; \
-	echo "--> Verifying vendored chain vectors against chain@$(CHAIN_VECTORS_VERSION)"; \
-	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
-	gh release download "$(CHAIN_VECTORS_VERSION)" --repo timeflareio/chain \
-		--pattern 'timeflare-chain-vectors-*.sha256' --dir "$$tmp" >/dev/null 2>&1 || { \
-		echo "❌ could not read chain@$(CHAIN_VECTORS_VERSION)'s vectors manifest."; \
-		echo "   Does that tag carry a release? Tags before v0.0.2 do not."; exit 1; }; \
-	fail=0; \
-	for v in $(CHAIN_VECTORS_FILES); do \
-		want=$$(grep -E "[ /]$$v\.json$$" "$$tmp"/*.sha256 | awk '{print $$1}'); \
-		if [ -z "$$want" ]; then \
-			echo "❌ $$v.json is absent from chain@$(CHAIN_VECTORS_VERSION)'s manifest"; fail=1; continue; \
-		fi; \
-		got=$$(shasum -a 256 "testdata/vectors/$$v.json" | awk '{print $$1}'); \
-		[ "$$want" = "$$got" ] || { echo "❌ $$v.json differs from chain@$(CHAIN_VECTORS_VERSION)"; fail=1; }; \
-	done; \
-	if [ $$fail -ne 0 ]; then \
-		echo "   Run 'make vectors-sync' — never hand-edit testdata/vectors/."; \
-		echo "   The chain owns these files; a local edit means this daemon is"; \
-		echo "   asserting conventions the chain does not implement."; \
-		exit 1; \
-	fi; \
-	echo "✅ Vendored chain vectors match chain@$(CHAIN_VECTORS_VERSION)"
-
-## refresh the vendored chain vectors from a chain release (CHAIN_VECTORS_VERSION=vX.Y.Z)
-vectors-sync:
-	@set -e; \
-	case "$(CHAIN_VECTORS_VERSION)" in \
-		v*) ;; \
-		*) echo "❌ pass a chain tag, e.g. make vectors-sync CHAIN_VECTORS_VERSION=v0.1.0"; exit 1;; \
-	esac; \
-	echo "--> Syncing chain vectors from chain@$(CHAIN_VECTORS_VERSION)"; \
-	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
-	gh release download "$(CHAIN_VECTORS_VERSION)" --repo timeflareio/chain \
-		--pattern 'timeflare-chain-vectors-*.tar.gz' \
-		--pattern 'timeflare-chain-vectors-*.sha256' --dir "$$tmp"; \
-	tar -xzf "$$tmp"/timeflare-chain-vectors-*.tar.gz -C "$$tmp"; \
-	for v in $(CHAIN_VECTORS_FILES); do \
-		src=$$(find "$$tmp" -name "$$v.json" -print -quit); \
-		[ -n "$$src" ] || { echo "❌ $$v.json absent from the chain corpus"; exit 1; }; \
-		want=$$(grep -E "[ /]$$v\.json$$" "$$tmp"/timeflare-chain-vectors-*.sha256 | awk '{print $$1}'); \
-		got=$$(shasum -a 256 "$$src" | awk '{print $$1}'); \
-		[ "$$want" = "$$got" ] || { echo "❌ $$v.json fails the chain's manifest"; exit 1; }; \
-		cp "$$src" "testdata/vectors/$$v.json"; \
-	done; \
-	echo "$(CHAIN_VECTORS_VERSION)" > testdata/vectors/CHAIN_VECTORS_VERSION
-	@echo "✅ Synced — review the diff, then run 'make test'"
+# The chain-owned vectors this daemon asserts — wallet_derivation and
+# client_conventions — travel inside the x/secrets/types module it already
+# requires, so there is nothing to sync and nothing to verify here. go.mod is
+# the pin, and the Go checksum database is the integrity check.
+#
+# The primitive vectors are a different corpus, owned by timeflareio/crypto.
+# This daemon asserts none of them — it consumes the primitives as a Go module
+# and lets that module's own suites prove them.
 
 ###############################################################################
 ###                           Cleanup                                      ###
@@ -330,5 +279,5 @@ info: mod-info
 
 .PHONY: config-help status test test-unit bench
 .PHONY: build install build-binary clean verify format format-check lint lint-check imports imports-check vet
-.PHONY: verify-pins vectors-verify vectors-sync govulncheck-gated
+.PHONY: verify-pins govulncheck-gated
 .PHONY: clean-all clean-temp clean-cov clean-bin clean-cache update-deps tidy download info

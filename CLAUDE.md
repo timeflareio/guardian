@@ -77,23 +77,21 @@ verify`. When it fails:
 - A cosmos-sdk bump is a **T2 change** and a two-repo train: the chain moves
   first, then this module. Never the other way round.
 
-## The vendored chain vectors
+## The chain vectors travel with the wire contract
 
-`testdata/vectors/` holds a pinned copy of two **chain-owned** vector files —
-`wallet_derivation` (key path layout) and `client_conventions` (mnemonic
-handling) — which this daemon's tests assert. The chain owns them; the pin is a
-chain tag in `testdata/vectors/CHAIN_VECTORS_VERSION`.
+Two **chain-owned** vector files — `wallet_derivation` (key path layout) and
+`client_conventions` (mnemonic handling) — are asserted by this daemon's tests
+and live in `x/secrets/types/testdata/vectors/`, inside the module `go.mod`
+already requires. `chainVectorsDir` in each test locates the module and reads
+them from there.
 
-- `make vectors-verify` — checks the copy against the pinned chain tag (part of
-  `verify`)
-- `make vectors-sync CHAIN_VECTORS_VERSION=vX.Y.Z` — refresh from a chain tag
+That means the version in `go.mod` is the only pin, and the Go checksum database
+is the integrity check. There is nothing to sync, nothing to verify against a
+manifest, and no copy in this repository to drift or be hand-edited.
 
-Never hand-edit them. A local edit means this daemon is asserting conventions the
-chain does not implement, which is exactly the drift the corpus exists to catch.
-
-The five **primitive** vectors are a separate corpus, owned by
-`timeflareio/crypto`. This daemon asserts none of them: it consumes the
-primitives as a module and lets that module's own suites prove them.
+The primitive vectors are a separate corpus, owned by `timeflareio/crypto`. This
+daemon asserts none of them: it consumes the primitives as a module and lets that
+module's own suites prove them.
 
 ## The network registry is read at `config init` and nowhere else
 
