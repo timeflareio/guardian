@@ -121,10 +121,10 @@ so the diff is reviewable as a rename: no logic changes ride along.
 
 Known gotchas, each a required edit rather than a risk:
 
-- `blockchain/wallet_key_test.go:38` and `custody/mnemonic_vectors_test.go:32`
-  read the vendored chain vectors via `filepath.Join("..", "testdata", ...)`.
-  One directory deeper, both become `"..", ".."`. The `vectors-verify` and
-  `vectors-sync` targets resolve from the repository root and are unaffected.
+- `blockchain/wallet_key_test.go` and `custody/mnemonic_vectors_test.go` read
+  the chain vectors out of the `x/secrets/types` module, locating it with
+  `chainVectorsDir`. That is independent of how deep the package sits, so moving
+  either one needs no path change.
 - `//go:embed assets` in `dashboard/handler.go:15` is package-relative, so it
   survives the move untouched — confirm rather than assume, because a silent
   failure here degrades to a blank dashboard page rather than a build error
@@ -413,7 +413,7 @@ network-facing surface, cannot export it.
   Same custody-adjacent plan.
 - **Protocol behaviour.** Nothing here touches the wire contract, the carried
   pins, or the vendored vectors, so `README.md`'s spec-first obligation is not
-  triggered. `verify-pins`, `vectors-verify` and `verify-boundaries`' chain-
+  triggered. `verify-pins` and `verify-boundaries`' chain-
   internals check all continue to pass unchanged.
 - **Makefile hygiene.** `make clean` means "apply formatting and lint fixes"
   while `clean-all` and `clean-bin` remove artefacts, inverting the universal

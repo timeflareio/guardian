@@ -123,7 +123,6 @@ jobs:
       - name: Compose release notes
         run: |
           set -euo pipefail
-          pin="$(grep -v '^#' testdata/vectors/CHAIN_VECTORS_VERSION | head -1)"
           types_ver="$(go list -m -f '{{.Version}}' github.com/timeflareio/chain/x/secrets/types)"
           crypto_ver="$(go list -m -f '{{.Version}}' github.com/timeflareio/crypto)"
           {
@@ -148,9 +147,8 @@ jobs:
             echo
             echo "| Dependency | Version |"
             echo "|---|---|"
-            echo "| \`chain/x/secrets/types\` (wire contract) | \`${types_ver}\` |"
+            echo "| \`chain/x/secrets/types\` (wire contract, and the chain vectors this daemon asserts) | \`${types_ver}\` |"
             echo "| \`crypto\` (primitives) | \`${crypto_ver}\` |"
-            echo "| chain vector corpus | \`${pin}\` |"
             echo
             echo "\`make verify\` passed on this commit, which includes \`verify-pins\` —"
             echo "the carried cosmos-sdk \`replace\` block matches the chain's at the pinned"

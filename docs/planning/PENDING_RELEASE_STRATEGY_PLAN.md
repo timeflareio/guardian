@@ -63,7 +63,7 @@ for them.
 
 - **Trigger**: pushing a `vX.Y.Z` tag. Nothing releases on merge.
 - **Preconditions**: the 0.x version guard, then `make verify` (which includes
-  `verify-boundaries`, `verify-pins` and `vectors-verify`) and `make test`.
+  `verify-boundaries` and `verify-pins`) and `make test`.
 - **Binaries** cross-compiled with `-trimpath` and `CGO_ENABLED=0`, stamped with
   the tag and commit, plus a `checksums.txt`.
 - **Image** built multi-arch from the repository's own `Dockerfile` and pushed to

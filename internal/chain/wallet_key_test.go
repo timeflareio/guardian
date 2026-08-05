@@ -3,7 +3,9 @@ package chain
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -35,7 +37,7 @@ func testWalletConfig(t *testing.T) *config.Config {
 }
 
 func TestWalletKeyDerivationVectors(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "wallet_derivation.json"))
+	raw, err := os.ReadFile(filepath.Join(chainVectorsDir(t), "wallet_derivation.json"))
 	require.NoError(t, err)
 	var corpus walletDerivationCorpus
 	require.NoError(t, json.Unmarshal(raw, &corpus))
@@ -72,4 +74,18 @@ func TestCreateWalletKeyRoundTrip(t *testing.T) {
 	assert.ErrorContains(t, err, "already exists")
 	_, err = ImportWalletKey(cfg, "roundtrip", mnemonic)
 	assert.ErrorContains(t, err, "already exists")
+}
+
+// chainVectorsDir locates the corpus inside the pinned x/secrets/types module.
+// The files travel with the module this daemon already requires, so there is
+// nothing to fetch and nothing to check against a manifest: the Go checksum
+// database already covers them, and the version in go.mod is the only pin.
+func chainVectorsDir(t *testing.T) string {
+	t.Helper()
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}",
+		"github.com/timeflareio/chain/x/secrets/types").Output()
+	require.NoError(t, err, "could not locate the pinned x/secrets/types module")
+	dir := strings.TrimSpace(string(out))
+	require.NotEmpty(t, dir, "the pinned x/secrets/types module has no local directory")
+	return filepath.Join(dir, "testdata", "vectors")
 }
