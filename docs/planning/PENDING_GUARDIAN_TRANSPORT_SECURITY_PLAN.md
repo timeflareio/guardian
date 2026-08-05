@@ -76,7 +76,7 @@ precisely in the remote-node topology this plan exists to enable.
 ## Design
 
 ### The TLS configuration surface, which
-[PENDING_GUARDIAN_NETWORK_SELECTION_PLAN.md](PENDING_GUARDIAN_NETWORK_SELECTION_PLAN.md) owns
+[DONE_GUARDIAN_NETWORK_SELECTION_PLAN.md](done/DONE_GUARDIAN_NETWORK_SELECTION_PLAN.md) owns
 
 Three keys on `Config`, in the `Network` group — `grpc_tls`, `grpc_tls_ca_file`
 and `grpc_tls_insecure_skip_verify` — with credentials built from them by one
