@@ -4,8 +4,8 @@
 every guardian comes out of setup pointed at the local devnet under the devnet's
 chain id. Pre-testnet: the first public network is the moment this becomes an
 operator-facing defect rather than a latent one.
-**Status**: in progress (4 August 2026) — `worktree-network-selection`
-**Origin**: [PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md](PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md)
+**Status**: done (5 August 2026) — PR #13
+**Origin**: [PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md](../PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md)
 finding 22 and its `chain_id` docs item; the chain's network registry
 (`chain/networks.json`, `chain/docs/guides/NETWORKS.md`); scope ruled by the
 owner, 4 August 2026.
@@ -16,7 +16,7 @@ owner, 4 August 2026.
 `internal/cli/config_init_test.go`, `internal/cli/config_doctor_test.go`,
 `internal/config/config_test.go`, a new `internal/config/networks_test.go`,
 `docs/guides/` operator setup text, `CLAUDE.md`,
-[PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md);
+[PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](../PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md);
 and in the chain repository, `devnet/guardians.sh` and
 `devnet/docker/init-guardians.sh`.
 
@@ -167,7 +167,7 @@ discarded with no record. That is a real narrowing and it is stated here rather
 than glossed: the operator gets one host out of however many were published.
 
 Widening the fields into lists with rotation on `ErrUnavailable` belongs to
-[PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md](PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md)
+[PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md](../PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md)
 Phase 6, whose open question 4 must be settled first. When it lands, selection
 writes the whole list and this narrowing disappears; nothing in this plan needs
 revisiting to allow that.
@@ -258,7 +258,7 @@ because `grpc.NewClient` dials lazily, that surfaces at the first query rather
 than at startup, after `guardiand start` has reported itself healthy.
 
 So this plan carries **Phase 1 of
-[PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md)**:
+[PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](../PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md)**:
 the `grpc_tls`, `grpc_tls_ca_file` and `grpc_tls_insecure_skip_verify` keys, with
 credentials selected from them by **one helper shared** by `NewClient` and the
 `key.go` call site — that plan's open question 4, answered yes, because two places
@@ -301,7 +301,7 @@ node on the other end is the chain it claims to be, and it cannot: whoever serve
 the list chooses the endpoints a guardian dials.
 
 The bound on that is the chain-id assertion at startup —
-[PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md](PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md)
+[PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md](../PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md)
 Phase 4 — which compares the configured `chain_id` against what the node
 reports. This plan makes that assertion more valuable rather than less: a
 `chain_id` taken from the registry is one an operator has no reason to doubt, so
@@ -360,7 +360,7 @@ So `DefaultConfig()` derives them from `secretstypes` instead of literals:
 `signer.go`, factored out so both callers read one expression. This lands here
 rather than in a plan of its own because it is the same concern the plan opens
 with — a network value hardcoded where an authority exists — and it is two lines;
-[PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md](PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md)
+[PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md](../PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md)
 continues to own `gas_price` *validation*, which is a different gap.
 
 `stake_amount` and `fee_buffer_percent` are genuine operator preference and stay
@@ -415,7 +415,7 @@ runs at a materially different rate.
    step; `CLAUDE.md` gains a line stating that the network registry is read at
    `config init` only and that the daemon's source of truth remains its
    configuration file; and
-   [PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md)
+   [PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](../PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md)
    is rewritten to open at its warning phase, with its open questions 1, 3 and 4
    settled and its component list reduced to what it still owns.
 
@@ -425,12 +425,12 @@ runs at a materially different rate.
   where this stops. No certificate pinning, no mTLS, no warning when a hand-typed
   non-loopback endpoint is left plaintext, no private CA reaching the event
   monitor, and no fix for the host-blind port-collision check — all still
-  [PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md)'s,
+  [PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md](../PENDING_GUARDIAN_TRANSPORT_SECURITY_PLAN.md)'s,
   which this plan reduces rather than replaces.
 - **TLS does not make the node trustworthy.** An authenticated channel to a
   hostile node is still a channel to a hostile node. The bounds on that are the
   gas ceiling and the chain-id assertion in
-  [PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md](PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md),
+  [PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md](../PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md),
   and both matter more once endpoints arrive from a published list rather than
   from the operator.
 - **It does not make `block_time` per-network.** It stays at 6s in

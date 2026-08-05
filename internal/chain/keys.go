@@ -152,7 +152,8 @@ func CreateWalletKey(cfg *config.Config, name string) (address, mnemonic string,
 
 // ImportWalletKey restores a signing key from its BIP39 mnemonic at the
 // chain's HD path — the pairing timeflared and every client derive
-// (pinned by testdata/vectors/wallet_derivation.json). Refuses to overwrite
+// (pinned by the wire contract's testdata/vectors/wallet_derivation.json).
+// Refuses to overwrite
 // an existing key of the same name.
 func ImportWalletKey(cfg *config.Config, name, mnemonic string) (string, error) {
 	kr, err := NewKeyring(cfg)

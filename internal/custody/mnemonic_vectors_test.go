@@ -4,7 +4,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,8 +15,8 @@ import (
 
 // CLIENT_CONVENTIONS.md §5 corpus pin: "every implementation asserts them in
 // CI" (principle 3). The TypeScript SDK asserts the same vectors from
-// conventions.test.ts; this is the Go side, reading the shared corpus from
-// disk — test data only, so no module dependency edge is created.
+// conventions.test.ts; this is the Go side, reading them out of the wire
+// contract module that carries them.
 type conventionsCorpus struct {
 	Mnemonic []struct {
 		Name          string `json:"name"`
@@ -29,7 +31,7 @@ type conventionsCorpus struct {
 }
 
 func TestMnemonicVectors(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "vectors", "client_conventions.json"))
+	raw, err := os.ReadFile(filepath.Join(chainVectorsDir(t), "client_conventions.json"))
 	require.NoError(t, err)
 	var corpus conventionsCorpus
 	require.NoError(t, json.Unmarshal(raw, &corpus))
@@ -58,4 +60,18 @@ func TestMnemonicVectors(t *testing.T) {
 		_, err := KeyFromMnemonic(v.Words)
 		assert.Error(t, err, "%s must be rejected (%s)", v.Name, v.Reason)
 	}
+}
+
+// chainVectorsDir locates the corpus inside the pinned x/secrets/types module.
+// The files travel with the module this daemon already requires, so there is
+// nothing to fetch and nothing to check against a manifest: the Go checksum
+// database already covers them, and the version in go.mod is the only pin.
+func chainVectorsDir(t *testing.T) string {
+	t.Helper()
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}",
+		"github.com/timeflareio/chain/x/secrets/types").Output()
+	require.NoError(t, err, "could not locate the pinned x/secrets/types module")
+	dir := strings.TrimSpace(string(out))
+	require.NotEmpty(t, dir, "the pinned x/secrets/types module has no local directory")
+	return filepath.Join(dir, "testdata", "vectors")
 }

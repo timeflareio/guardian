@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/timeflareio/guardian/internal/chain"
@@ -86,6 +88,8 @@ func runConfigDoctor(cmd *cobra.Command, configOnly bool) error {
 		u.Success("Validation: configuration is consistent")
 	}
 
+	reportNetworkDrift(u, effective)
+
 	// --config-only stops here: everything above reads the configuration, and
 	// everything below reaches for key material that a host being prepared may
 	// not hold yet.
@@ -127,6 +131,59 @@ func runConfigDoctor(cmd *cobra.Command, configOnly bool) error {
 	u.Success("Guardian configuration is operational ✓")
 	u.EmptyLine()
 	return nil
+}
+
+// reportNetworkDrift compares the configured endpoints against the published
+// entry they were selected from.
+//
+// This is the answer to the one thing selection leaves open: values are copied
+// into the configuration at setup and never re-read, so a published endpoint that
+// moves leaves a guardian on the old one. Re-reading at startup was rejected —
+// it would let whoever serves the list redirect a running guardian between
+// restarts — which makes reporting it here the alternative to an operator finding
+// out by failing.
+//
+// It never fails the doctor. An operator who deliberately points at their own
+// node is not misconfigured, and drift is a difference worth naming rather than a
+// fault. Nor does it fail when the list cannot be read: this command has to work
+// on a host with no route out.
+func reportNetworkDrift(u *ui.Printer, cfg *config.Config) {
+	switch cfg.Network {
+	case "":
+		u.Note("Network: no network recorded — endpoints predate selection, or were set by hand")
+		return
+	case config.CustomNetworkID:
+		u.Note("Network: custom — endpoints are yours, nothing to compare against")
+		return
+	}
+
+	list, err := config.FetchNetworkList(context.Background(), config.NetworkListSource())
+	if err != nil {
+		u.Note("Network: %s — not checked (%v)", cfg.Network, err)
+		return
+	}
+	published, ok := list.Find(cfg.Network)
+	if !ok {
+		u.Note("Network: %s is no longer published — nothing to compare against", cfg.Network)
+		return
+	}
+
+	drifted := false
+	for _, field := range []struct{ name, configured, want string }{
+		{"chain_id", cfg.ChainID, published.ChainID},
+		{"rpc_endpoint", cfg.RPCEndpoint, published.RPCEndpoint()},
+		{"grpc_endpoint", cfg.GRPCEndpoint, published.GRPCEndpoint()},
+	} {
+		if field.configured != field.want {
+			u.Warning("%s is %q; %s publishes %q", field.name, field.configured, cfg.Network, field.want)
+			drifted = true
+		}
+	}
+	if drifted {
+		u.Note(ui.Indent1 + "Deliberate overrides are fine. If not, 'guardianctl config set' the published values.")
+		return
+	}
+	u.Success("Network: %s matches what the chain publishes (%s)", cfg.Network, published.ChainID)
 }
 
 // reportDashboard states where the operator page will be served and what it

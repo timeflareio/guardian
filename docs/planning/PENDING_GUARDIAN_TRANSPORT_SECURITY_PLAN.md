@@ -5,10 +5,9 @@ all, and the plaintext channel carries the gas figure the daemon signs against.
 **Status**: refining (1 August 2026)
 **Origin**: [PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md](PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md)
 finding 6, with the port-collision item from finding 41.
-**Components**: `guardian/blockchain/client.go`, `signer.go`;
-`guardian/guardian/events.go`; `guardian/cmd/guardiand/cmd/key.go`,
-`config.go`; `guardian/config/config.go`; `docs/guides/CONTAINERS.md`;
-`guardian/config/config_test.go`.
+**Components**: `internal/guardian/events.go`; `internal/config/config.go`
+(the port-collision check), `config_test.go`; `internal/chain/transport.go` (the
+non-loopback warning); `docs/guides/CONTAINERS.md`.
 
 ---
 
@@ -76,24 +75,26 @@ precisely in the remote-node topology this plan exists to enable.
 
 ## Design
 
-### Phase 1 — TLS configuration surface
+### The TLS configuration surface, which
+[DONE_GUARDIAN_NETWORK_SELECTION_PLAN.md](done/DONE_GUARDIAN_NETWORK_SELECTION_PLAN.md) owns
 
-Three new keys on `Config`, in the existing `Network` group:
+Three keys on `Config`, in the `Network` group — `grpc_tls`, `grpc_tls_ca_file`
+and `grpc_tls_insecure_skip_verify` — with credentials built from them by one
+helper (`internal/chain/transport.go`, `Dial`) that both `NewClient` and the
+`key.go` call site use. The default stays plaintext, so the devnet and every
+colocated deployment are unchanged, and selecting a non-local network from the
+chain's registry turns `grpc_tls` on so the setting arrives with the deployment
+that needs it.
 
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `grpc_tls` | bool | `false` | Use TLS for the gRPC connection |
-| `grpc_tls_ca_file` | string (path) | `""` | CA bundle; empty means the system pool |
-| `grpc_tls_insecure_skip_verify` | bool | `false` | Skip certificate verification |
+`grpc_tls_insecure_skip_verify` exists because operators do use self-signed
+certificates during bring-up, and its absence pushes them back to full plaintext,
+which is worse. It warns on every dial that sets it.
 
-The third exists because operators do use self-signed certificates during
-bring-up, and its absence would push them back to full plaintext, which is
-worse. It must warn loudly at startup whenever set.
+That work belongs to the selection plan because selection is what populates the
+keys, and offering a network the daemon cannot dial would not have been worth
+shipping. What remains below is this plan's.
 
-`NewClient` and the `key.go:437` call site select credentials from these. The
-default stays plaintext so the devnet and colocated deployments are unchanged.
-
-### Phase 2 — refuse silent plaintext to a remote host
+### Phase 1 — refuse silent plaintext to a remote host
 
 Defaults cannot be trusted to protect an operator who does not know the risk
 exists. At startup, when `grpc_tls` is false and `grpc_endpoint` resolves to a
@@ -106,9 +107,9 @@ gas figures you sign against, and your signed transactions all cross this link
 in clear. Set grpc_tls, or run a colocated node.
 ```
 
-Whether this should be a refusal rather than a warning is open question 2.
+Whether this should be a refusal rather than a warning is open question 1.
 
-### Phase 3 — the RPC/WebSocket leg
+### Phase 2 — the RPC/WebSocket leg
 
 `events.go:65` uses `rpchttp.New(em.cfg.RPCEndpoint, "/websocket")`. An
 `https://` endpoint needs a client built with matching TLS settings, so the
@@ -116,12 +117,12 @@ same configuration must reach the event monitor. This leg carries no signing
 material, but it does carry the block headers that drive reveal timing, so a
 manipulated feed can delay a reveal.
 
-### Phase 4 — fix the port-collision check
+### Phase 3 — fix the port-collision check
 
 Compare host and port together, treating an empty or loopback host in
 `grpc_endpoint` as colliding with the listeners and any other host as not.
 
-### Phase 5 — documentation
+### Phase 4 — documentation
 
 `docs/guides/CONTAINERS.md` gains the TLS keys in its environment table, and
 its remote-endpoint example either uses TLS or states plainly that it is a
@@ -152,14 +153,7 @@ plaintext link suitable for a trusted network only.
 
 ## Open questions
 
-1. **Should TLS default to on rather than off?** On is the safer default; off
-   preserves the devnet and every colocated deployment unchanged.
-   *Recommendation: default off, with the phase 2 warning.* Defaulting on would
-   break every existing local setup on upgrade for no gain, since a loopback
-   connection has nothing to protect. The warning is what closes the gap for
-   the remote case.
-
-2. **Should a non-loopback plaintext endpoint be a refusal rather than a
+1. **Should a non-loopback plaintext endpoint be a refusal rather than a
    warning?** The precedent cuts both ways: the daemon refuses to start on a
    wrong share key, but only warns about an unauthenticated dashboard.
    *Recommendation: warn, and revisit before mainnet.* On testnet, operators
@@ -169,20 +163,6 @@ plaintext link suitable for a trusted network only.
    distinction from the share-key case is that a wrong key guarantees a slash,
    whereas plaintext is a risk the operator can reasonably accept on a private
    link.
-
-3. **Should `grpc_tls` be inferred from the endpoint scheme instead of being
-   its own key?** `grpc_endpoint` is currently a bare `host:port`.
-   *Recommendation: keep the explicit boolean.* Adding scheme parsing to an
-   endpoint that has never had one invites the "`https://` typo silently
-   disables TLS" class of bug, and the explicit key is greppable in a config
-   review.
-
-4. **Does the `key.go:437` call site need the same treatment?** It dials
-   independently to query the guardian record during key operations.
-   *Recommendation: yes, and it should share one credential-construction
-   helper with `NewClient`.* Two places deciding transport security is exactly
-   the duplication the architectural-minimalism rule warns about, and the one
-   that gets missed will be this one.
 
 ---
 
