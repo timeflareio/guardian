@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 
-	"cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/client"
 	clienttx "github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -65,8 +64,7 @@ func warnIfPricedAboveReimbursement(cfg *config.Config, logger *zap.Logger) {
 	if err != nil || len(price) == 0 {
 		return // Validate() owns malformed configuration; this is advisory only
 	}
-	floor := math.LegacyNewDec(secretstypes.MinGasPriceUveilNum).
-		Quo(math.LegacyNewDec(secretstypes.MinGasPriceUveilDen))
+	floor := config.MinGasPrice()
 	configured := price.AmountOf(cfg.Denom)
 	if configured.LTE(floor) {
 		return

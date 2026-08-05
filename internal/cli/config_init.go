@@ -33,11 +33,28 @@ func NewConfigInitCmd() *cobra.Command {
 Creates ~/.timeflare/guardian/config.yaml with sensible defaults if it doesn't exist.
 If the file already exists, this command will not overwrite it.
 
+The network is chosen from the list the chain publishes, so the chain id and both
+endpoints are set together rather than typed. That is worth insisting on: a wrong
+chain id leaves every query working and every transaction failing, which looks
+like a healthy guardian until it has already missed a reveal window. Naming no
+network takes whatever the published list calls its default; --network custom
+configures the endpoints yourself, and is also how a host with no route to the
+list completes setup unattended.
+
+The list is read here and nowhere else — what this command writes is what the
+daemon runs on, so nothing at runtime depends on reaching it.
+
 Critical parameters can be set via flags or will be prompted interactively.
 --non-interactive demands the flag form and names whatever is missing rather
 than prompting for it.`,
 		Example: `  # Initialize with interactive prompts
   guardianctl config init
+
+  # Initialize for a named network
+  guardianctl config init --network devnet
+
+  # Configure the endpoints yourself, reading no published list
+  guardianctl config init --network custom
 
   # Initialize with flags to skip all prompts
   guardianctl config init --non-interactive \
@@ -63,6 +80,7 @@ than prompting for it.`,
 	}
 
 	// Add flags for critical parameters
+	cmd.Flags().String("network", "", "network id from the chain's published registry (default: whatever it names as its default; \"custom\" configures the endpoints yourself)")
 	cmd.Flags().String("encryption-public-key", "", "encryption public key (64 hex chars) - skips interactive prompt")
 	cmd.Flags().Bool("auto-generate-key", false, "automatically generate encryption keys instead of prompting - skips interactive prompt")
 	cmd.Flags().String("key-name", "", "timeflared keyring key name (used as guardian identifier) - skips interactive prompt")
@@ -78,6 +96,7 @@ than prompting for it.`,
 // initFlags is what this invocation asked for, read once so no step has to
 // reach back into cobra.
 type initFlags struct {
+	network           string
 	encryptionKey     string
 	autoGenerateKey   bool
 	keyName           string
@@ -90,6 +109,7 @@ type initFlags struct {
 
 func readInitFlags(cmd *cobra.Command) initFlags {
 	f := initFlags{}
+	f.network, _ = cmd.Flags().GetString("network")
 	f.encryptionKey, _ = cmd.Flags().GetString("encryption-public-key")
 	f.autoGenerateKey, _ = cmd.Flags().GetBool("auto-generate-key")
 	f.keyName, _ = cmd.Flags().GetString("key-name")
@@ -156,6 +176,7 @@ func (f initFlags) validateUnattended() error {
 
 // initSettings is everything the steps collected, ready to be written.
 type initSettings struct {
+	network             networkChoice
 	keyName             string
 	keyringBackend      string
 	keyringDir          string
@@ -198,6 +219,11 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 	}
 
 	var err error
+	// First, because it is the widest-reaching answer and the one an operator
+	// arrives already knowing.
+	if settings.network, err = collectNetwork(u, flags, interactive); err != nil {
+		return err
+	}
 	if settings.keyName, err = collectSigningKeyName(u, flags); err != nil {
 		return err
 	}
@@ -230,7 +256,7 @@ func collectSigningKeyName(u *ui.Printer, flags initFlags) (string, error) {
 		return flags.keyName, nil
 	}
 
-	u.Step("🔑 Step 1: Blockchain Signing Key")
+	u.Step("🔑 Step 2: Blockchain Signing Key")
 	u.TextLn(ui.Indent1 + "Guardians need a signing key for blockchain transactions (registration, reveals, etc.)")
 	u.TextLn(ui.Indent1 + "This key will also serve as your guardian identifier.\n")
 
@@ -272,7 +298,7 @@ func collectKeyringPassphrase(u *ui.Printer, flags initFlags, backend string, in
 	}
 
 	u.EmptyLine()
-	u.Step("🔐 Step 2: Keyring Passphrase Setup")
+	u.Step("🔐 Step 3: Keyring Passphrase Setup")
 	u.TextLn(ui.Indent1 + "Guardian operations require automatic transaction signing for confirming")
 	u.TextLn(ui.Indent1 + "and revealing secret shares. A passphrase file enables these automated")
 	u.TextLn(ui.Indent1 + "transactions without manual intervention.\n")
@@ -342,7 +368,7 @@ func collectEncryptionKey(u *ui.Printer, manager *config.Manager, flags initFlag
 	}
 
 	u.EmptyLine()
-	u.Step("🔑 Step 3: Encryption Key Setup")
+	u.Step("🔑 Step 4: Encryption Key Setup")
 	u.TextLn(ui.Indent1 + "Guardians need encryption keys to securely receive and decrypt secret shares.")
 	u.TextLn(ui.Indent1 + "You can either provide an existing public key or generate new keys.\n")
 
@@ -425,6 +451,24 @@ func applyInitSettings(manager *config.Manager, s initSettings) error {
 		"key_name":        s.keyName,
 		"keyring_backend": s.keyringBackend,
 	}
+	// Recording which network the endpoints came from is what lets `config
+	// doctor` tell a deliberate override from an endpoint that moved underneath
+	// the guardian.
+	if s.network.selected() {
+		values["network"] = s.network.id
+	}
+	if s.network.chainID != "" {
+		values["chain_id"] = s.network.chainID
+	}
+	if s.network.rpcEndpoint != "" {
+		values["rpc_endpoint"] = s.network.rpcEndpoint
+	}
+	if s.network.grpcEndpoint != "" {
+		values["grpc_endpoint"] = s.network.grpcEndpoint
+	}
+	if s.network.grpcTLS {
+		values["grpc_tls"] = "true"
+	}
 	if s.encryptionPublicKey != "" {
 		values["encryption_public_key"] = s.encryptionPublicKey
 		values["encryption_private_key_path"] = manager.GetPrivateKeyPath()
@@ -458,6 +502,22 @@ func applyInitSettings(manager *config.Manager, s initSettings) error {
 	return nil
 }
 
+// effectiveChainID and effectiveGRPCEndpoint report what was actually written:
+// the selected value, or the default the manual path left standing.
+func effectiveChainID(s initSettings, manager *config.Manager) string {
+	if s.network.chainID != "" {
+		return s.network.chainID
+	}
+	return manager.GetConfig().ChainID
+}
+
+func effectiveGRPCEndpoint(s initSettings, manager *config.Manager) string {
+	if s.network.grpcEndpoint != "" {
+		return s.network.grpcEndpoint
+	}
+	return manager.GetConfig().GRPCEndpoint
+}
+
 // reportInitSummary says what was written and what to do next.
 func reportInitSummary(u *ui.Printer, manager *config.Manager, configPath string, s initSettings) {
 	u.EmptyLine()
@@ -467,6 +527,18 @@ func reportInitSummary(u *ui.Printer, manager *config.Manager, configPath string
 	u.Step("📋 Configuration Summary:")
 	u.Text(ui.Indent1 + "📁 Config File:           ")
 	u.Path("%s\n", configPath)
+	if s.network.selected() {
+		u.Text(ui.Indent1 + "🌐 Network:               ")
+		u.Value("%s", s.network.id)
+		u.TextLn("  (%s)", effectiveChainID(s, manager))
+		u.Text(ui.Indent1 + "🔌 gRPC Endpoint:         ")
+		u.Value("%s", effectiveGRPCEndpoint(s, manager))
+		if s.network.grpcTLS {
+			u.TextLn("  (TLS)")
+		} else {
+			u.EmptyLine()
+		}
+	}
 	u.Text(ui.Indent1 + "🗝️  Guardian Identity:      ")
 	u.Value("%s\n", s.keyName)
 	u.Text(ui.Indent1 + "🔐 Keyring Backend:        ")

@@ -3,10 +3,13 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/types/bech32"
+	secretstypes "github.com/timeflareio/chain/x/secrets/types"
 	"github.com/timeflareio/guardian/internal/custody"
 )
 
@@ -45,9 +48,24 @@ const (
 //	path:   "true" → value is a filesystem path ($VAR/~ expanded on set)
 type Config struct {
 	// Network
+	//
+	// Network records which entry of the chain's published registry the three
+	// values below came from ("custom" when they were typed). The registry is
+	// read only by `config init`; these fields are what the daemon runs on.
+	Network      string `config:"network" group:"Network" desc:"Network id selected from the chain's published registry (custom = hand-configured endpoints)"`
 	ChainID      string `config:"chain_id" group:"Network" desc:"Blockchain network identifier"`
 	RPCEndpoint  string `config:"rpc_endpoint" group:"Network" desc:"CometBFT RPC endpoint (queries, event subscriptions)"`
 	GRPCEndpoint string `config:"grpc_endpoint" group:"Network" desc:"gRPC endpoint (typed queries, transaction broadcast)"`
+
+	// gRPC transport. A gRPC address is host:port with nowhere to state a
+	// scheme, so the dial has to be told. Selecting a network sets these; the
+	// default is plaintext, which is what a colocated node and the devnet need.
+	//
+	// This covers the path an attacker sits on, not the node at the end of it: a
+	// TLS connection to a hostile node is still a connection to a hostile node.
+	GRPCTLS                   bool   `config:"grpc_tls" group:"Network" desc:"Use TLS for the gRPC connection"`
+	GRPCTLSCAFile             string `config:"grpc_tls_ca_file" group:"Network" desc:"CA bundle for the gRPC connection (empty = system pool)" path:"true"`
+	GRPCTLSInsecureSkipVerify bool   `config:"grpc_tls_insecure_skip_verify" group:"Network" desc:"Skip gRPC certificate verification (bring-up only — warns at startup)"`
 
 	// Identity & keys
 	KeyName             string `config:"key_name" group:"Identity & Keys" desc:"Name of the guardian key in the keyring"`
@@ -131,9 +149,18 @@ func DefaultConfig() *Config {
 	return &Config{
 		keyCache: &encryptionKeyCache{},
 
+		// The devnet, as the values a configuration carries before anything sets
+		// them and the starting point for the manual path. An unattended
+		// `config init` lands on whatever the published registry names as its
+		// default rather than on these.
+		Network:      "",
 		ChainID:      "timeflare-test",
 		RPCEndpoint:  "http://localhost:26657",
 		GRPCEndpoint: "localhost:9090",
+
+		GRPCTLS:                   false,
+		GRPCTLSCAFile:             "",
+		GRPCTLSInsecureSkipVerify: false,
 
 		KeyName:             "",
 		GuardianAddress:     "",
@@ -147,8 +174,8 @@ func DefaultConfig() *Config {
 		KeyringDir:               expandPath(DefaultGuardianDir),
 		KeyringPassphrase:        "",
 
-		Denom:            "uveil",
-		GasPrice:         "0.1uveil",
+		Denom:            secretstypes.DefaultDenom,
+		GasPrice:         DefaultGasPrice(),
 		GasAdjustment:    1.5,
 		StakeAmount:      "10000000000uveil",
 		FeeBufferPercent: 1,
@@ -187,6 +214,28 @@ func DefaultConfig() *Config {
 		LogFormat:         "console",
 		LogFilePath:       "",
 	}
+}
+
+// MinGasPrice is the consensus-enforced gas-price floor, as the wire contract
+// expresses it. Every price comparison reads this rather than a copy: the floor
+// is the chain's to state, and a guardian that disagrees about it either
+// underpays every transaction into CheckTx rejection or overpays out of its own
+// float on every accept and reveal.
+func MinGasPrice() math.LegacyDec {
+	return math.LegacyNewDec(secretstypes.MinGasPriceUveilNum).
+		Quo(math.LegacyNewDec(secretstypes.MinGasPriceUveilDen))
+}
+
+// DefaultGasPrice is the floor, in the form a gas-price field takes. The floor
+// is the cheapest price the chain accepts and the price at which a creator's
+// reimbursement is denominated, which makes it the only default that costs a
+// guardian nothing.
+func DefaultGasPrice() string {
+	// LegacyDec renders to full precision ("0.100000000000000000"), which is
+	// correct and unreadable; a configuration default should look like the value
+	// an operator would have typed.
+	amount := strings.TrimSuffix(strings.TrimRight(MinGasPrice().String(), "0"), ".")
+	return amount + secretstypes.DefaultDenom
 }
 
 // Validate checks the configuration for completeness and cross-field

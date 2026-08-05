@@ -118,3 +118,71 @@ func TestConfigDoctorReportsEnvironmentOverrides(t *testing.T) {
 		t.Errorf("doctor did not report the environment override:\n%s", out)
 	}
 }
+
+// Selection copies the endpoints into the configuration and never re-reads them,
+// which is deliberate — re-reading at startup would let whoever serves the list
+// redirect a running guardian between restarts. Reporting the difference here is
+// what stops that becoming something an operator only discovers by failing.
+func TestConfigDoctorReportsNetworkDrift(t *testing.T) {
+	t.Run("matching endpoints are confirmed", func(t *testing.T) {
+		g := newFixture(t)
+		g.initialised("guardian-one")
+
+		out := g.mustRun("", "config", "doctor")
+		if !strings.Contains(out, "matches what the chain publishes") {
+			t.Errorf("doctor did not confirm the network:\n%s", out)
+		}
+	})
+
+	t.Run("a moved endpoint is named on both sides", func(t *testing.T) {
+		g := newFixture(t)
+		g.initialised("guardian-one")
+		g.mustRun("", "config", "set", "grpc-endpoint", "node.example.org:9090")
+
+		out := g.mustRun("", "config", "doctor")
+		if !strings.Contains(out, "node.example.org:9090") || !strings.Contains(out, "localhost:9090") {
+			t.Errorf("doctor did not name both the configured and published values:\n%s", out)
+		}
+	})
+
+	// Drift is a difference worth naming, not a fault: an operator pointing at
+	// their own node is not misconfigured.
+	t.Run("drift does not fail the doctor", func(t *testing.T) {
+		g := newFixture(t)
+		g.initialised("guardian-one")
+		g.mustRun("", "config", "set", "chain-id", "timeflare-something-else")
+
+		if out, err := g.run("", "config", "doctor"); err != nil {
+			t.Errorf("doctor failed on a deliberate override: %v\n%s", err, out)
+		}
+	})
+
+	// This command has to work on a host with no route out, so an unreadable list
+	// is reported and stepped over.
+	t.Run("an unreadable list is not a failure", func(t *testing.T) {
+		g := newFixture(t)
+		g.initialised("guardian-one")
+		g.unreachableRegistry()
+
+		out, err := g.run("", "config", "doctor")
+		if err != nil {
+			t.Errorf("doctor failed because it could not read the network list: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "not checked") {
+			t.Errorf("doctor did not say the comparison was skipped:\n%s", out)
+		}
+	})
+
+	// Hand-configured endpoints have nothing to be compared against, and saying so
+	// is different from saying they match.
+	t.Run("custom is reported as having nothing to compare", func(t *testing.T) {
+		g := newFixture(t)
+		g.initialised("guardian-one")
+		g.mustRun("", "config", "set", "network", "custom")
+
+		out := g.mustRun("", "config", "doctor")
+		if !strings.Contains(out, "nothing to compare against") {
+			t.Errorf("doctor did not report custom as uncomparable:\n%s", out)
+		}
+	})
+}

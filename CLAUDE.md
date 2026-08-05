@@ -95,6 +95,30 @@ The five **primitive** vectors are a separate corpus, owned by
 `timeflareio/crypto`. This daemon asserts none of them: it consumes the
 primitives as a module and lets that module's own suites prove them.
 
+## The network registry is read at `config init` and nowhere else
+
+`guardianctl config init` reads the network list the chain publishes
+(`chain/networks.json`, documented in `chain/docs/guides/NETWORKS.md`) and writes
+the chosen entry's `chain_id`, `rpc_endpoint`, `grpc_endpoint` and `grpc_tls` into
+the configuration. **The configuration is the daemon's only source thereafter**,
+so nothing at runtime depends on that list being reachable and a guardian already
+configured never consults it.
+
+Two consequences worth keeping:
+
+- **Do not add a second reader.** Re-reading at startup would let whoever serves
+  the list redirect a running guardian between restarts. `config doctor` reports
+  drift against the `network` key instead, and applying it stays an operator's
+  decision.
+- **`grpc_tls` follows the entry's `local`**, not a guess about the hostname. The
+  chain's `verify-networks` requires a local entry's URLs to be loopback and a
+  non-local entry's to be `https`, so locality *is* the transport rule rather than
+  a proxy for it. Cleartext is permitted for loopback and nowhere else.
+
+`GUARDIAN_NETWORK_LIST_URL` overrides the source and takes a path as readily as a
+URL. The test suite and the chain's devnet both point it at a local file, which is
+why neither depends on reaching GitHub.
+
 ## Essential Commands
 
 - `make test` — all unit tests
