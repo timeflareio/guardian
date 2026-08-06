@@ -206,7 +206,7 @@ The obvious form — a fraction of `MinCommitTimeout × block_time` — needs a 
 this daemon does not carry: `block_time` is gone, because every window the protocol
 defines is a block count and a stored duration would be a second opinion about a
 network the daemon can measure (the chain's
-`PENDING_BLOCK_TIME_CONFIGURATION_PLAN.md`). `config init` sizes the interval from
+`done/DONE_BLOCK_TIME_CONFIGURATION_PLAN.md`). `config init` sizes the interval from
 the registry's cadence, which is the one place that knows it. A daemon-side bound
 would have to be expressed in blocks, or against a measurement, and neither is
 worth the machinery for a fallback poll rate whose primary discovery path is

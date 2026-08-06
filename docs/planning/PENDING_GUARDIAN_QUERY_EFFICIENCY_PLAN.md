@@ -201,7 +201,7 @@ requesting address rather than accepting an arbitrary one as a lookup key.
    block time varies by network and the daemon carries no cadence to convert it —
    the fallback poll rate is sized once at `config init` from the registry, and
    nothing else knows a duration (the chain's
-   `PENDING_BLOCK_TIME_CONFIGURATION_PLAN.md`).
+   `done/DONE_BLOCK_TIME_CONFIGURATION_PLAN.md`).
    *Recommendation: coalesce on a short fixed interval (around one second).* It
    keeps the daemon's responsiveness independent of any assumed cadence, and at
    any real block time it collapses a block's worth of events into one scan.
