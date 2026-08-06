@@ -204,8 +204,7 @@ func (srs *ShareRevealService) processReveal(ctx context.Context,
 		TxHash: txHash, Success: true, Height: currentHeight,
 	})
 
-	sinceWindowOpen := time.Duration(currentHeight-secret.RevealStartBlock) * srs.config.BlockTime
-	srs.metrics.RecordReveal(true, sinceWindowOpen)
+	srs.metrics.RecordReveal(true, currentHeight-secret.RevealStartBlock)
 
 	srs.logger.Info("Share revealed successfully",
 		zap.String("secret_id", secret.ID),

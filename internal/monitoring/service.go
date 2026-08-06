@@ -117,9 +117,9 @@ func createMetrics(registry *prometheus.Registry) *Metrics {
 			Buckets: prometheus.DefBuckets,
 		}),
 		RevealTiming: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "guardian_reveal_timing_seconds",
-			Help:    "Time from reveal window start to actual reveal",
-			Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600},
+			Name:    "guardian_reveal_timing_blocks",
+			Help:    "Blocks from reveal window open to the share being submitted",
+			Buckets: []float64{1, 2, 5, 10, 25, 50, 100, 250},
 		}),
 
 		// System metrics

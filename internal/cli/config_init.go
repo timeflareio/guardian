@@ -466,6 +466,13 @@ func applyInitSettings(manager *config.Manager, s initSettings) error {
 	if s.network.grpcEndpoint != "" {
 		values["grpc_endpoint"] = s.network.grpcEndpoint
 	}
+	// The fallback poll rate follows the network's cadence: polling much faster
+	// than blocks arrive is load for nothing, and much slower risks missing a
+	// window. Derived here, from the registry, and not stored as a cadence — the
+	// daemon needs the interval, not the number it came from.
+	if s.network.blockTime > 0 {
+		values["polling_interval"] = s.network.blockTime.String()
+	}
 	if s.network.grpcTLS {
 		values["grpc_tls"] = "true"
 	}

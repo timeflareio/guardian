@@ -220,8 +220,6 @@ func confirmServiceRunning(cmd *cobra.Command, u *ui.Printer, cfg *config.Config
 // showRegistrationAndConfirm displays the registration parameters and asks
 // for confirmation before the transaction is signed and broadcast.
 func showRegistrationAndConfirm(u *ui.Printer, cfg *config.Config, guardianAddress, stakeAmount string, availableFrom, availableUntil int64, acceptingSecrets bool) bool {
-	blockSeconds := cfg.BlockTime.Seconds()
-
 	u.EmptyLine()
 	u.Separator("🚀 Guardian Registration Preview")
 	u.EmptyLine()
@@ -249,7 +247,7 @@ func showRegistrationAndConfirm(u *ui.Printer, cfg *config.Config, guardianAddre
 	u.Value("Current block + %d\n", availableUntil)
 
 	u.Text(ui.Indent1 + "• Duration:            ")
-	u.Value("~%d blocks (~%.1f hours)\n", availableUntil-availableFrom, float64(availableUntil-availableFrom)*blockSeconds/3600.0)
+	u.Value("~%d blocks\n", availableUntil-availableFrom)
 
 	u.Text(ui.Indent1 + "• Accepting Secrets:   ")
 	if acceptingSecrets {
@@ -275,7 +273,6 @@ func showRegistrationSuccess(u *ui.Printer, cfg *config.Config, availableFrom, a
 	sectionColor := color.New(color.FgYellow, color.Bold)
 	commandColor := color.New(color.FgGreen, color.Bold)
 	valueColor := color.New(color.FgCyan)
-	blockSeconds := cfg.BlockTime.Seconds()
 
 	u.EmptyLine()
 	headerColor.Println("✅ Guardian Registration Successful!")
@@ -287,7 +284,7 @@ func showRegistrationSuccess(u *ui.Printer, cfg *config.Config, availableFrom, a
 	u.Text("   • Status:     ")
 	valueColor.Println("Registered and ready for assignments")
 	u.Text("   • Duration:   ")
-	valueColor.Printf("%d blocks (~%.1f hours)\n", availableUntil-availableFrom, float64(availableUntil-availableFrom)*blockSeconds/3600.0)
+	valueColor.Printf("%d blocks\n", availableUntil-availableFrom)
 	u.EmptyLine()
 
 	sectionColor.Println("🚀 Next Steps:")

@@ -198,10 +198,12 @@ requesting address rather than accepting an arbitrary one as a lookup key.
    considering during execution.
 
 2. **What is the right coalescing window?** One block is the natural unit, but
-   block time varies by network and `block_time` is documented as display-only.
-   *Recommendation: coalesce on a short fixed interval (around one second)
-   rather than on `block_time`.* It keeps the daemon's responsiveness
-   independent of a config value that is explicitly not authoritative, and at
+   block time varies by network and the daemon carries no cadence to convert it —
+   the fallback poll rate is sized once at `config init` from the registry, and
+   nothing else knows a duration (the chain's
+   `PENDING_BLOCK_TIME_CONFIGURATION_PLAN.md`).
+   *Recommendation: coalesce on a short fixed interval (around one second).* It
+   keeps the daemon's responsiveness independent of any assumed cadence, and at
    any real block time it collapses a block's worth of events into one scan.
 
 3. **Should the per-page timeout be configurable?**

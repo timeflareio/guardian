@@ -6,16 +6,18 @@ import "time"
 // a service constructed without monitoring (tests, one-shot commands) needs
 // no wiring — a nil *Metrics is a no-op sink.
 
-// RecordReveal counts a reveal attempt and, when the reveal succeeded, the
-// timing from window-open (in blocks × blockTime) to submission.
-func (m *Metrics) RecordReveal(success bool, sinceWindowOpen time.Duration) {
+// RecordReveal counts a reveal attempt and, when the reveal succeeded, how far
+// past window-open the share was submitted — in BLOCKS, which is what the
+// guardian knows exactly. Seconds would require a cadence it deliberately does
+// not carry, and which differs between networks and test runs.
+func (m *Metrics) RecordReveal(success bool, blocksSinceWindowOpen int64) {
 	if m == nil {
 		return
 	}
 	if success {
 		m.SuccessfulReveals.Inc()
-		if sinceWindowOpen >= 0 {
-			m.RevealTiming.Observe(sinceWindowOpen.Seconds())
+		if blocksSinceWindowOpen >= 0 {
+			m.RevealTiming.Observe(float64(blocksSinceWindowOpen))
 		}
 	} else {
 		m.FailedReveals.Inc()

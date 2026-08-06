@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/timeflareio/guardian/internal/cli/ui"
@@ -28,6 +29,11 @@ type networkChoice struct {
 	rpcEndpoint  string
 	grpcEndpoint string
 	grpcTLS      bool
+	// blockTime as the registry states it, used once here to size the fallback
+	// poll rate and never written to the config. The daemon carries no cadence:
+	// what it does is driven by block heights, and a stored duration would be a
+	// second opinion about a network it can measure.
+	blockTime time.Duration
 }
 
 // selected reports whether anything was chosen.
@@ -39,13 +45,19 @@ func (c networkChoice) selected() bool {
 // from the entry's locality, which the chain's own verify-networks ties to the
 // endpoint schemes, so it is the rule rather than an inference from it.
 func choiceFrom(n config.RegistryNetwork) networkChoice {
-	return networkChoice{
+	c := networkChoice{
 		id:           n.ID,
 		chainID:      n.ChainID,
 		rpcEndpoint:  n.RPCEndpoint(),
 		grpcEndpoint: n.GRPCEndpoint(),
 		grpcTLS:      n.GRPCTLS(),
 	}
+	// A registry that states no cadence leaves the compiled default standing,
+	// which is the same outcome as a network nobody has published a cadence for.
+	if d, err := time.ParseDuration(n.BlockTime); err == nil && d > 0 {
+		c.blockTime = d
+	}
+	return c
 }
 
 // collectNetwork resolves the network from the published registry, a flag, or a
