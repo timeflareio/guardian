@@ -110,8 +110,8 @@ content was reinterpreted.
 
 ### 7. Validation gaps on numeric and duration fields
 
-`Validate()` checks `polling_interval`, `block_time`, `request_timeout`,
-`retry_attempts`, the `max_*` fields and the ports, but not:
+`Validate()` checks `polling_interval`, `request_timeout`, `retry_attempts`, the
+`max_*` fields and the ports, but not:
 
 | Field | Consequence of zero/negative |
 |---|---|
@@ -199,9 +199,18 @@ passphrases. See open question 4 for the compatibility alternative.
 
 Add positive-value checks for `retry_backoff`, `event_reconnect_backoff`,
 `shutdown_timeout` and `gas_adjustment`; a non-negative check for
-`fee_buffer_percent`; parse `stake_amount` as a coin; and bound
-`polling_interval` above by a fraction of `MinCommitTimeout × block_time` so a
-poll interval cannot straddle a commit window.
+`fee_buffer_percent`; and parse `stake_amount` as a coin.
+
+`polling_interval` is deliberately **not** bounded against a commit window here.
+The obvious form — a fraction of `MinCommitTimeout × block_time` — needs a cadence
+this daemon does not carry: `block_time` is gone, because every window the protocol
+defines is a block count and a stored duration would be a second opinion about a
+network the daemon can measure (the chain's
+`PENDING_BLOCK_TIME_CONFIGURATION_PLAN.md`). `config init` sizes the interval from
+the registry's cadence, which is the one place that knows it. A daemon-side bound
+would have to be expressed in blocks, or against a measurement, and neither is
+worth the machinery for a fallback poll rate whose primary discovery path is
+event-driven.
 
 Where a field has a safe fallback rather than a correct-by-refusal answer,
 prefer clamping with a warning, following the cache's precedent.

@@ -91,7 +91,6 @@ type Config struct {
 	RequestTimeout time.Duration `config:"request_timeout" group:"Chain Interaction" desc:"Per-request timeout for chain queries and transactions"`
 	RetryAttempts  int           `config:"retry_attempts" group:"Chain Interaction" desc:"Retry attempts for transient chain request failures"`
 	RetryBackoff   time.Duration `config:"retry_backoff" group:"Chain Interaction" desc:"Base backoff between retries (linear per attempt)"`
-	BlockTime      time.Duration `config:"block_time" group:"Chain Interaction" desc:"Expected block time — display maths and derived defaults only; consensus timing stays the chain's"`
 
 	// Service
 	PollingInterval      time.Duration `config:"polling_interval" group:"Service" desc:"Fallback poll rate (primary discovery is event-driven when enabled)"`
@@ -183,7 +182,6 @@ func DefaultConfig() *Config {
 		RequestTimeout: 30 * time.Second,
 		RetryAttempts:  3,
 		RetryBackoff:   2 * time.Second,
-		BlockTime:      6 * time.Second,
 
 		PollingInterval:      6 * time.Second,
 		MaxConcurrentSecrets: 100,
@@ -319,12 +317,6 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.PollingInterval <= 0 {
 		return fmt.Errorf("polling_interval must be positive")
-	}
-	if cfg.BlockTime <= 0 {
-		return fmt.Errorf("block_time must be positive")
-	}
-	if cfg.PollingInterval < cfg.BlockTime/2 {
-		return fmt.Errorf("polling_interval (%s) is more than twice as fast as block_time (%s) — pointless load", cfg.PollingInterval, cfg.BlockTime)
 	}
 	if cfg.RequestTimeout <= 0 {
 		return fmt.Errorf("request_timeout must be positive")

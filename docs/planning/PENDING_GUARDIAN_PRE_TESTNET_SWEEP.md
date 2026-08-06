@@ -219,8 +219,7 @@ it — but `start` never asks, and `service.go:413` then executes
 passed.
 
 Every cross-field invariant `Validate()` exists to enforce — zero intervals,
-port collisions, `polling_interval < block_time/2` — sails into a running
-daemon. A crash after startup on a guardian holding accepted assignments is a
+port collisions — sails into a running daemon. A crash after startup on a guardian holding accepted assignments is a
 no-reveal slash.
 
 ---
@@ -880,9 +879,8 @@ failures (finding 2).
 
 ## 34. Low–Medium — validation gaps on numeric and duration fields
 
-`Config.Validate()` (`config/config.go:195-291`) checks `polling_interval`,
-`block_time`, `request_timeout`, `retry_attempts`, the `max_*` fields and the
-ports, but not:
+`Config.Validate()` (`config/config.go`) checks `polling_interval`,
+`request_timeout`, `retry_attempts`, the `max_*` fields and the ports, but not:
 
 - **`retry_backoff`** — zero or negative accepted; `client.go:97` multiplies
   it, so `time.After(≤0)` fires immediately and retries hammer a struggling
@@ -1208,8 +1206,9 @@ are load-bearing.
 
 **Protocol conformance**
 
-- All protocol timing uses block heights, never the local clock; `block_time`
-  is explicitly display-only. No wall-clock hazards.
+- All protocol timing uses block heights, never the local clock, and the daemon
+  carries no cadence at all: the fallback poll rate is sized once at `config init`
+  from the registry. No wall-clock hazards.
 - Inclusive window bounds match the keeper on the open side, and the
   reconstructable-still-must-reveal trap is handled (`cache.go:190-199`) with a
   comment explaining what it cost to learn.

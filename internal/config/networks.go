@@ -73,7 +73,13 @@ type RegistryNetwork struct {
 	// node, which is the one place the registry permits cleartext. Held behind a
 	// pointer so an entry that omits it is a malformed entry rather than one
 	// silently reading as non-local.
-	Local     *bool             `json:"local"`
+	Local *bool `json:"local"`
+	// BlockTime is the cadence the network runs at, if the registry states one.
+	// Deployment fact rather than protocol: every window the protocol defines is
+	// a block count. Read at `config init` to size the fallback poll rate, and
+	// deliberately not stored in the daemon's config — nothing it does should
+	// depend on knowing this.
+	BlockTime string            `json:"blockTime"`
 	Endpoints RegistryEndpoints `json:"endpoints"`
 }
 
