@@ -66,6 +66,13 @@ until it is unambiguous, *then* execute. These rules keep that discipline honest
 
 - **Plans are executed in a worktree that forks `main`.** The refined plan drives
   the branch; `main` is never worked on directly.
+- **The worktree lives inside the repository, at `.claude/worktrees/<name>`.**
+  That path is gitignored, so an execution checkout never shows up as untracked
+  content in the repository holding it, and every worktree sits under one
+  predictable root rather than wherever the session happened to start. A
+  worktree placed beside the repository is outside every convention here, and
+  tooling that scans the parent directory reads it as a repository in its own
+  right.
 - **Run the relevant tests locally before opening a PR.** A plan reaching `done`
   means its tests pass locally first, not that they are left for CI to discover.
 - **Claim the devnet before touching it.** There is only one. `~/.timeflare`,
