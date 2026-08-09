@@ -60,7 +60,9 @@ until it is unambiguous, *then* execute. These rules keep that discipline honest
   service, binary, build target, or second implementation requires stating the
   case and getting explicit approval first (CLAUDE.md architectural minimalism).
   Default to extending what exists; where duplication is unavoidable, pin it with
-  shared `testdata/vectors/` so it cannot drift.
+  shared `testdata/vectors/` so it cannot drift. The rule guards against
+  proliferation, not consolidation: a component that replaces several existing
+  implementations with one is the minimal outcome and needs no case made for it.
 
 ## Execution
 
