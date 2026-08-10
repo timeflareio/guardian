@@ -272,7 +272,7 @@ require (
 	github.com/tendermint/go-amino v0.16.0 // indirect
 	github.com/tidwall/btree v1.8.1 // indirect
 	github.com/timeflareio/chain/x/secrets/types v0.0.4
-	github.com/timeflareio/crypto v0.0.1
+	github.com/timeflareio/crypto v0.0.3
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/zondax/hid v0.9.2 // indirect
 	github.com/zondax/ledger-go v1.0.1 // indirect
