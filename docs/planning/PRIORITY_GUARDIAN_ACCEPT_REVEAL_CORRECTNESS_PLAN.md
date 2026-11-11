@@ -1,45 +1,62 @@
 # Guardian accept and reveal decision correctness
 
-**Priority**: P0 — the daemon can permanently forfeit an assignment over a
+| | |
+|---|---|
+| **Priority** | P0 |
+| **Status** | refining |
+| **Created** | 1 August 2026 |
+| **Updated** | 11 November 2026 |
+| **Protocol surface** | none |
+| **Repositories** | guardian |
+| **Depends on** | [PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md](PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md) (its phase 2, for this plan's phase 3) |
+| **Related** | [PENDING_GUARDIAN_PRE_TESTNET_SWEEP_PLAN.md](PENDING_GUARDIAN_PRE_TESTNET_SWEEP_PLAN.md); [PENDING_GUARDIAN_INFLIGHT_GUARD_RATIONALE_PLAN.md](PENDING_GUARDIAN_INFLIGHT_GUARD_RATIONALE_PLAN.md) |
+| **Open questions** | 5 |
+
+**Why this priority**: the daemon can permanently forfeit an assignment over a
 transient local condition, can believe it revealed when it did not, and can be
 blocked from retrying a dropped reveal until after its window has closed.
-**Status**: refining (1 August 2026)
-**Origin**: [PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md](PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md)
-findings 2, 12, 13, 14, 16, 17, 18, 33.
-**Components**: `guardian/guardian/reveal.go`, `service.go`, `cache.go`,
-`inflight.go`, `observations.go`; `guardian/config/config.go`;
-`guardian/guardian/reveal_test.go`, `cache_test.go`, `service_test.go`,
+**Origin**: [PENDING_GUARDIAN_PRE_TESTNET_SWEEP_PLAN.md](PENDING_GUARDIAN_PRE_TESTNET_SWEEP_PLAN.md)
+findings 2, 12, 13, 14, 16, 18, 33.
+**Already landed**: finding 17 (the `enable_hmac_validation` opt-out) and the
+reveal jitter (`reveal_offset_blocks`) were both removed by commit f1a9265
+(4 August 2026): HMAC validation is unconditional, and a share is revealed as
+soon as its window opens. Neither is in scope here any longer.
+**Components**: `internal/guardian/reveal.go`, `service.go`, `cache.go`,
+`inflight.go`, `observations.go`; `internal/config/config.go`;
+`internal/guardian/reveal_test.go`, `cache_test.go`, `service_test.go`,
 `inflight_test.go`, `integration_test.go`.
 
 **Protocol surface**: none. Every behaviour introduced here is already
-sanctioned by `docs/spec.md` — Phase 3 names non-response as a legitimate
-outcome and assigns capacity assessment to the guardian; Settlement defines
-what counts as a correct reveal. No spec.md change is required, and the plan
-must not be executed in a way that needs one.
+sanctioned by the spec (`timeflareio/chain` — `docs/spec.md`) — Phase 3 names
+non-response as a legitimate outcome and assigns capacity assessment to the
+guardian; Settlement defines what counts as a correct reveal. No spec change is
+required, and the plan must not be executed in a way that needs one.
 
 ---
 
 ## The issue
 
-This is the cluster that decides *what the daemon submits and when*. Six
+This is the cluster that decides *what the daemon submits and when*. Eight
 defects, several interacting.
 
 ### 1. A transient local condition causes a permanent on-chain rejection
 
-`reveal.go:109-121`: any decrypt failure falls through to
-`rejectAssignment`, including `ErrPrivateKeyUnavailable` — returned at
-`reveal.go:351-352` when no epoch key can be loaded at all.
+`processConfirmation` (`internal/guardian/reveal.go:107-120`): any decrypt
+failure falls through to `rejectAssignment`, including
+`ErrPrivateKeyUnavailable` — returned by `decryptShare` (`reveal.go:329-331`)
+when no epoch key can be loaded at all.
 
 The daemon contradicts itself here. Startup deliberately tolerates an
 unloadable key so that "an operator can attach the passphrase file without a
-crash loop" (`service.go:155-175`, `:269-276`). The confirmation path consults
-no such state, so during exactly that grace period every arriving assignment is
-**rejected on chain**.
+crash loop" (`internal/guardian/service.go:158-175`, `:269-276`). The
+confirmation path consults no such state, so during exactly that grace period
+every arriving assignment is **rejected on chain**.
 
-Rejection is final: `x/secrets/keeper/msg_server_confirm_shares.go:65-69`
-returns `ErrAlreadyResponded` for any status other than `PROPOSED`, and
-spec.md Phase 3 states "Decision finality means acceptance responses cannot be
-changed once submitted."
+Rejection is final: the chain returns `ErrAlreadyResponded` for any status
+other than `PROPOSED` (`timeflareio/chain` —
+`x/secrets/keeper/msg_server_confirm_shares.go:67`), and spec.md Phase 3 states
+"Decision finality means acceptance responses cannot be changed once
+submitted."
 
 A container restart whose passphrase secret mounts a minute late, with a
 Phase-2 distribution landing in that minute, permanently forfeits the
@@ -48,20 +65,23 @@ assignment and pays an unreimbursed reject fee.
 ### 2. Rejection is the wrong default even when the share is genuinely bad
 
 Every validation failure broadcasts `MsgGuardianConfirmShares{accept:false}`
-(`reveal.go:394-421`). But non-response is a first-class protocol outcome —
-spec.md Phase 3: "Candidates may reject, fail the float check, or simply not
-respond — progression only requires the band's floor" — and the accept-fee
-slices pay only acceptors and revealers, so reject gas is never reimbursed.
-CHAIN_MECHANICS.md Security Observation §2 confirms non-response is unpriced.
+(`rejectAssignment`, `reveal.go:372-399`). But non-response is a first-class
+protocol outcome — spec.md Phase 3: "Candidates may reject, fail the float
+check, or simply not respond — progression only requires the band's floor" —
+and the accept-fee slices pay only acceptors and revealers, so reject gas is
+never reimbursed. CHAIN_MECHANICS.md Security Observation §2
+(`timeflareio/chain` — `docs/CHAIN_MECHANICS.md`) confirms non-response is
+unpriced.
 
 A creator distributing garbage to its draw therefore griefs every selected
 guardian into a fee per secret.
 
 ### 3. Broadcast success is treated as reveal success
 
-`service.go:557-559` calls `MarkRevealed` when `ProcessReveal` returns nil, and
-`reveal.go:209-210` records `metrics.RecordReveal(true, …)`. Both fire on
-`BROADCAST_MODE_SYNC` acceptance (`signer.go:239-247`), which is CheckTx only.
+`processReveals` (`service.go:557-559`) calls `MarkRevealed` when
+`ProcessReveal` returns nil, and `processReveal` (`reveal.go:207`) records
+`metrics.RecordReveal(true, …)`. Both fire on `BROADCAST_MODE_SYNC` acceptance
+(`internal/chain/signer.go`, `submitLocked`), which is CheckTx only.
 
 Two consequences. A transaction that passes CheckTx and then fails in
 DeliverTx — or is dropped from the mempool — leaves the daemon believing it
@@ -71,96 +91,96 @@ broadcasts, not reveals.
 
 ### 4. `ProcessReveal`'s nil return is overloaded
 
-`reveal.go:143-166` returns nil in three non-submission cases: the jitter
-offset has not arrived, the window has already passed, and a submission is
-already in flight. `service.go:546` cannot distinguish any of them from a
-successful broadcast.
+`ProcessReveal` (`reveal.go:141-164`) returns nil when a submission is already
+in flight (`:152-157`), and `processReveals` (`service.go:546`) cannot
+distinguish that from a successful broadcast.
 
-- With `reveal_offset_blocks > 0`, a not-yet-due secret cycles
-  mark-revealed → evict → re-add on every poll, and the actual reveal lands up
-  to roughly two polling intervals after its planned height. It still fits
-  (planned height is capped at half the window, `reveal.go:291`), but the
-  safety margin is consumed by cache churn, invisibly.
-- When the window has already passed, the nil → `MarkRevealed` path flips state
-  to `StateRevealed`, so `checkMissedWindows` — which filters on
-  `StateNeedsReveal` (`service.go:588`) — can fail to count the miss. The slash
-  indicator under-reports in precisely the case it exists for.
+- A secret whose reveal is merely in flight is marked `StateRevealed`, evicted
+  on the next refresh and re-added — cache churn on the path where a retry may
+  be needed.
+- A falsely-marked secret whose window then closes is no longer
+  `StateNeedsReveal`, so `checkMissedWindows` — which filters on that state
+  (`service.go:588`) — can fail to count the miss. The slash indicator
+  under-reports in precisely the case it exists for.
 - Correctness now rests on `shouldEvict` evicting `StateRevealed`
-  (`cache.go:218-221`). `inflight.go:33-35` already names this coupling as
-  load-bearing. A future cache change that breaks it becomes a permanent missed
-  reveal.
+  (`internal/guardian/cache.go:218-221`). `internal/guardian/inflight.go`
+  already names this coupling as load-bearing. A future cache change that
+  breaks it becomes a permanent missed reveal.
+
+The timing gate at the top of `ProcessReveal` also returns nil, but it has no
+live producer: `GetSecretsNeedingReveal` (`cache.go:121-132`) hands
+`processReveals` only secrets already inside their window at the same height.
 
 ### 5. A dropped reveal near the window tail cannot be retried
 
 After a broadcast passes CheckTx, `InFlightRegistry.Reserve` refuses
-resubmission until `broadcastHeight + 5` (`inflight.go:26-35`, `:80-84`). If
-the transaction is then dropped — node restart, mempool eviction — the recovery
-path (preserve `StateRevealed` → evict → re-add as `StateNeedsReveal`) runs,
-but the reservation blocks the retry.
+resubmission until `broadcastHeight + 5` (`inFlightExpiryBlocks`,
+`inflight.go:35`). If the transaction is then dropped — node restart, mempool
+eviction — the recovery path (preserve `StateRevealed` → evict → re-add as
+`StateNeedsReveal`) runs, but the reservation blocks the retry.
 
-`inflight.go:33-35` anticipates exactly this: the expiry "must also stay under
-the reveal path's evict-and-re-add recovery, or the guard would turn a case
-that self-corrects today into a missed reveal window — which costs 50% of the
-bond". With `MinRevealDuration = 100` blocks
-(`x/secrets/types/constants.go:94-95`), the exposed tail is 5-7% of the
-smallest permitted window.
+The comment on that constant anticipates exactly this: the expiry "must also
+stay under the reveal path's evict-and-re-add recovery, or the guard would turn
+a case that self-corrects today into a missed reveal window — which costs 50%
+of the bond". The reveal window is derived on chain and its floor is 50 blocks
+(`RevealWindowFloor`, `timeflareio/chain` — `x/secrets/types/constants.go`), so
+the exposed tail is 10% of the smallest window.
+
+The same comment's arithmetic about the commit window is wrong and is corrected
+by [PENDING_GUARDIAN_INFLIGHT_GUARD_RATIONALE_PLAN.md](PENDING_GUARDIAN_INFLIGHT_GUARD_RATIONALE_PLAN.md);
+that plan changes the stated justification, not the value this section is
+about.
 
 ### 6. Window and deadline edges are not respected on the confirm side
 
 `processConfirmation` never reads `CommitDeadline` at all — the field is used
-only by the dashboard (`dashboard_source.go:152-180`) — while
-`msg_server_confirm_shares.go:43-48` rejects past-deadline confirms. The daemon
-therefore keeps retrying a futile confirmation, paying a fee each time, until
-the cache evicts the secret.
+only by the dashboard (`internal/guardian/dashboard_source.go:168-177`) — while
+the chain rejects past-deadline confirms (`timeflareio/chain` —
+`x/secrets/keeper/msg_server_confirm_shares.go:43-47`). The commit window is a
+fixed 50 blocks from creation (`CommitTimeoutBlocks`, same constants file). The
+daemon therefore keeps retrying a futile confirmation, paying a fee each time,
+until the cache evicts the secret.
 
 The reveal side is subtler and is analysed under Design below.
 
 ### 7. No economic self-assessment, and the decision log says otherwise
 
-`processConfirmation` (`reveal.go:88-140`) accepts on two conditions: the share
+`processConfirmation` (`reveal.go:86-138`) accepts on two conditions: the share
 decrypts and the HMAC verifies. It never consults unlocked float, the frozen
-bond, distance or the active bond count — yet records
-`Reason: "share HMAC verified, bond affordable"` (`reveal.go:378-381`). The log
+bond, distance or the active bond count — yet `acceptAssignment` records
+`Reason: "share HMAC verified, bond affordable"` (`reveal.go:356-359`). The log
 asserts a check that does not exist.
 
 The data is already fetched: `Secret.OurBondUveil`/`BondFor` and
 `Guardian.Stake`/`LockedStake`/`BondK`/`ActiveBondCount`
-(`blockchain/types.go:21-29`, `:69-86`) are consumed only by the dashboard.
+(`internal/chain/types.go`) are consumed only by the dashboard.
 
-The chain is the hard gate, so the daemon cannot over-commit
-(`msg_server_confirm_shares.go:94-103` fails on insufficient unlocked float or
-the `MaxActiveBondsPerGuardian` cap of 100). But when short, the daemon retries
-the doomed accept every poll tick until the commit deadline, with no
-classification and no backoff. spec.md Phase 3 explicitly assigns this
+The chain is the hard gate, so the daemon cannot over-commit: spec.md Phase 3
+fails the accept when unlocked float is below the frozen bond, or at the
+concurrency cap of 100 (`MaxActiveBondsPerGuardian`). But when short, the
+daemon retries the doomed accept every poll tick until the commit deadline,
+with no classification and no backoff. spec.md Phase 3 explicitly assigns this
 responsibility to the client: "Capacity assessment is otherwise the guardian's
 own responsibility — its client should decline assignments beyond what its
 infrastructure can serve."
 
-### 8. `enable_hmac_validation: false` guarantees a slash
+### 8. Data race on shared `*CachedSecret`
 
-`reveal.go:225-229` skips validation entirely, at debug level, and
-`Config.Validate()` says nothing about it. Acceptance locks the bond, and the
-HMAC is the only thing between "I decrypted something" and "I hold the share
-the chain will check". With it off, the chain rejects every reveal
-deterministically (`msg_server_reveal_share.go:84-86`) and the window closes
-into a no-reveal slash. spec.md Phase 3 makes offline HMAC verification a
-*requirement* of accepting.
-
-### 9. Data race on shared `*CachedSecret`
-
-`cache.go:420-478` reassigns `cached.Secret`, `cached.Assignment`,
-`cached.LocalState` and `cached.LastUpdated` under `cache.mu`, while
-`reconcileInFlight` (`service.go:487-500`), `checkMissedWindows` (`:586-597`)
+The cache reassigns `cached.Secret`, `cached.Assignment`, `cached.LocalState`
+and `cached.LastUpdated` under `cache.mu` (`internal/guardian/cache.go`), while
+`reconcileInFlight` (`service.go:485-501`), `checkMissedWindows` (`:586-597`)
 and the reveal workers (`:539-560`) read those fields through shared pointers
-with no lock held. The polling loop and the event-monitor callbacks genuinely
-run concurrently with no mutual exclusion.
+with no lock held — `GetAll` (`cache.go:97-106`) copies the map, not the
+entries. The polling loop and the event-monitor callbacks genuinely run
+concurrently with no mutual exclusion.
 
 Damage is bounded today — `EncryptedShare` is immutable per assignment and the
 in-flight registry gates duplicates — but a reader can observe a torn pair, and
 the existing `-race` suite does not cover it because the tests never run the
-poll loop and the event monitor together. `cache_snapshot.go:9-15` documents
-this precise hazard and fixes it for the dashboard while the daemon's own
-consumers still read live pointers.
+poll loop and the event monitor together.
+`internal/guardian/cache_snapshot.go:9-15` documents this precise hazard and
+fixes it for the dashboard while the daemon's own consumers still read live
+pointers.
 
 ---
 
@@ -177,29 +197,28 @@ Replace the single "decrypt failed → reject" path with three outcomes:
 | Insufficient unlocked float, or at the local concurrency cap | **Skip**, record the reason, back off | The accept would fail in DeliverTx anyway |
 | All checks pass | **Accept** | — |
 
-The decision reason recorded at `reveal.go:378-381` becomes accurate: it names
+The decision reason recorded by `acceptAssignment` becomes accurate: it names
 the checks actually performed.
 
 Whether the bad-share case should reject rather than skip is open question 1.
 
 ### Phase 2 — un-overload the reveal return
 
-`ProcessReveal` returns an explicit outcome:
+`ProcessReveal` returns an explicit outcome, one value per case that has a
+producer:
 
 ```go
 type RevealOutcome int
 
 const (
-    RevealSkippedNotDue RevealOutcome = iota
-    RevealSkippedInFlight
-    RevealSkippedWindowPassed
+    RevealSkippedInFlight RevealOutcome = iota
     RevealBroadcast
 )
 ```
 
-`service.go` calls `MarkRevealed` only on `RevealBroadcast`, which removes the
-churn cycle, restores `checkMissedWindows`'s ability to see a missed window,
-and severs the accidental dependency on `shouldEvict`'s treatment of
+`processReveals` calls `MarkRevealed` only on `RevealBroadcast`, which removes
+the churn cycle, restores `checkMissedWindows`'s ability to see a missed
+window, and severs the accidental dependency on `shouldEvict`'s treatment of
 `StateRevealed`.
 
 ### Phase 3 — reveal success means inclusion, not acceptance
@@ -215,6 +234,11 @@ histogram measures reveals rather than broadcasts. A separate counter records
 broadcasts, because the gap between the two is exactly what an operator
 debugging a slash needs to see.
 
+This phase depends on
+[PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md](PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md)
+phase 2: inclusion-based success only means something if a submission is not
+silently abandoned at shutdown.
+
 ### Phase 4 — window and deadline edges
 
 **Confirm side** is unambiguous: stop attempting once the observed height
@@ -222,11 +246,11 @@ exceeds `CommitDeadline`. The transaction cannot succeed and the fee is wasted.
 
 **Reveal side** needs care, and the sweep's initial "last safe broadcast is
 `end − 1`" is too blunt. A transaction broadcast when our *observed* committed
-height is `end` reaches a block at `end + 1` and is rejected by
-`reveal_window.go:30-33`. But our observed height can lag the network, in which
-case the same broadcast lands at `end` and succeeds. The asymmetry decides it:
-attempting costs one fee, not attempting costs 40% of the bond burned plus 10%
-to the creator.
+height is `end` reaches a block at `end + 1` and is rejected by the chain
+(`timeflareio/chain` — `x/secrets/keeper/reveal_window.go:30`). But our
+observed height can lag the network, in which case the same broadcast lands at
+`end` and succeeds. The asymmetry decides it: attempting costs one fee, not
+attempting costs 40% of the bond burned plus 10% to the creator.
 
 So the design keeps the attempt at the edge and fixes the accounting around it:
 
@@ -234,9 +258,9 @@ So the design keeps the attempt at the edge and fixes the accounting around it:
 - Never treat such a broadcast as success (phase 3 already ensures this).
 - Log and count it distinctly as a last-chance attempt, so an operator sees
   that the daemon was at the edge rather than comfortably inside the window.
-- Make the *scheduling* avoid the edge instead: `plannedRevealHeight`
-  (`reveal.go:280-296`) already caps jitter at half the window; the real
-  exposure is discovering a secret late, which
+- Nothing in the *scheduling* reaches the edge: `shouldRevealNow`
+  (`reveal.go:258-274`) reveals as soon as the window opens. The real exposure
+  is discovering a secret late, which
   [PENDING_GUARDIAN_QUERY_EFFICIENCY_PLAN.md](PENDING_GUARDIAN_QUERY_EFFICIENCY_PLAN.md)
   addresses.
 
@@ -260,21 +284,14 @@ Before accepting, compare the secret's frozen bond for this guardian
 (`Secret.BondFor`) against unlocked float (`Stake − LockedStake`), and the
 active bond count against the local cap. Both values are already on hand.
 
-This is also where `max_concurrent_secrets` — currently dead (finding 39) —
-either becomes real or is deleted; see open question 3.
+This is also where `max_concurrent_secrets` — currently dead (sweep finding 39)
+— either becomes real or is deleted; see open question 3.
 
 Repeated shortfall should back off rather than retry every tick, and record a
 decision the dashboard and logs can show, so "why did I not take that secret?"
 is answerable.
 
-### Phase 7 — remove the HMAC opt-out
-
-Delete `enable_hmac_validation` and the branch at `reveal.go:225-229`. The
-check costs one SHA-256, spec.md requires it, and the flag's only reachable
-effect is a guaranteed slash. Removal is a config-schema change, which the
-July 2026 ruling (improvements plan §9.2) permits without migration.
-
-### Phase 8 — close the cache race
+### Phase 7 — close the cache race
 
 Accessors return values rather than shared pointers. `CachedSecret`'s fields
 are only ever *reassigned* (the `Secret` and `Assignment` objects themselves
@@ -302,8 +319,12 @@ under `-race`; the current suite's failure to do so is why this went unnoticed.
   `MsgSlashGuardian` is a revenue feature, not an obligation, and is out of
   scope.
 - **It does not persist in-flight state across restarts.** The
-  one-duplicate-per-restart cost remains accepted
-  ([DONE_GUARDIAN_INFLIGHT_SUBMISSIONS_PLAN.md](../done/DONE_GUARDIAN_INFLIGHT_SUBMISSIONS_PLAN.md)).
+  one-duplicate-per-restart cost remains accepted (`timeflareio/chain` —
+  `DONE_GUARDIAN_INFLIGHT_SUBMISSIONS_PLAN.md`).
+- **It does not correct the in-flight guard's stated rationale.** That is
+  [PENDING_GUARDIAN_INFLIGHT_GUARD_RATIONALE_PLAN.md](PENDING_GUARDIAN_INFLIGHT_GUARD_RATIONALE_PLAN.md);
+  phase 5 here changes when a reservation expires, and both touch the same
+  comment in `inflight.go`.
 
 ---
 
@@ -358,6 +379,9 @@ under `-race`; the current suite's failure to do so is why this went unnoticed.
   — the complement: that plan makes a submission survive the network, this one
   decides what to submit and when. Phase 3's inclusion-based success depends on
   submissions not being silently abandoned, which is its phase 2.
+- [PENDING_GUARDIAN_INFLIGHT_GUARD_RATIONALE_PLAN.md](PENDING_GUARDIAN_INFLIGHT_GUARD_RATIONALE_PLAN.md)
+  — corrects the justification written beside `inFlightExpiryBlocks`, the
+  constant phase 5 builds on.
 - [PENDING_GUARDIAN_QUERY_EFFICIENCY_PLAN.md](PENDING_GUARDIAN_QUERY_EFFICIENCY_PLAN.md)
   — owns discovery latency, which is the upstream cause of edge-of-window
   reveals.

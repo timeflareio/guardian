@@ -1,5 +1,9 @@
 # Planning — rules for authoring and refining plans
 
+The rules below are the same ones every timeflare repository follows. The protocol
+authority they defer to is `docs/spec.md` in `timeflareio/chain`, not anything
+here.
+
 This directory holds design/implementation plans. A plan is a contract we refine
 until it is unambiguous, *then* execute. These rules keep that discipline honest.
 
@@ -8,6 +12,8 @@ until it is unambiguous, *then* execute. These rules keep that discipline honest
 - Plans are named `PENDING_<NAME>_PLAN.md` (prefix `PRIORITY_` for the highest
   priority). On completion they are renamed `DONE_<NAME>_PLAN.md` and moved to
   `done/`, retained as the design rationale and decision log.
+  A plan the owner rules against is renamed `REJECTED_<NAME>_PLAN.md` and
+  moved to `done/` for the same reason.
 - **Plan documents live on `main`.** A plan is authored, refined and committed
   directly on `main` so it is reviewable ahead of execution. Worktrees are for
   *execution only* (see Execution) — an executing worktree receives the plan by
@@ -18,15 +24,48 @@ until it is unambiguous, *then* execute. These rules keep that discipline honest
 
 ## Every plan has a header
 
-- **Priority** — `P0`–`P3`, most urgent first, with a one-line reason
-  (e.g. `P1 — protocol structure, pre-testnet`).
+A plan opens with a status table directly under its title. Each row holds one
+short value, so every plan reads the same at a glance and the workspace
+`status.sh` can list them:
+
+```markdown
+| | |
+|---|---|
+| **Priority** | P1 |
+| **Status** | refining |
+| **Created** | 1 August 2026 |
+| **Updated** | 6 August 2026 |
+| **Protocol surface** | none |
+| **Repositories** | chain, guardian |
+| **Depends on** | — |
+| **Related** | [PENDING_<NAME>_PLAN.md](PENDING_<NAME>_PLAN.md) |
+| **Open questions** | 2 (§7) |
+```
+
+- **Priority** — `P0`–`P3`, most urgent first.
 - **Status** — one of: `refining` → `ready` → `in progress` → `done`.
   - **Status starts as `refining`** and stays there until every open question and
     uncertainty is resolved. A plan does not become `ready` (executable) with open
     items outstanding.
-  - Record the date and, where relevant, the branch/PR as status advances.
-- **Origin** — link the motivating issue, CHAIN_MECHANICS.md ledger item (oddity/observation/defect), review, or
-  design session.
+- **Created** — the date the plan was written. **Updated** — the date of the
+  last status change or substantive revision. Both absolute.
+- **Protocol surface** — `none`, or what the plan changes in it: spec, proto,
+  wire contract, vectors.
+- **Repositories** — every repository the plan touches, its own first.
+- **Depends on** — the plans or decisions that must land first. **Related** —
+  other plans worth reading alongside. A plan in this repository is linked; one
+  in another is named as `timeflareio/<repo>` — `<FILE>.md`. Either is `—` when
+  empty.
+- **Open questions** — how many remain and the section that holds them, or
+  `none`.
+
+The reasoning sits below the table as prose, each field on a bold label:
+
+- **Why this priority** — the one-line reason behind the `P` value.
+- **Status notes** — optional: what has landed, and the branch/PR as status
+  advances.
+- **Origin** — link the motivating issue, review, design session, or the
+  upstream plan this one descends from.
 - **Components** — enumerate every surface the plan touches (modules, proto,
   clients, docs, tests). This is the blast-radius checklist for execution.
 
@@ -49,7 +88,8 @@ until it is unambiguous, *then* execute. These rules keep that discipline honest
 - **State what the plan does *not* solve.** Scope boundaries and known residual
   risks are documented plainly. No overclaiming; if a change bounds a problem
   rather than closing it, say so.
-- **Spec-first.** `docs/spec.md` is the protocol authority. A plan that changes
+- **Spec-first.** The protocol authority is `docs/spec.md` in
+  `timeflareio/chain`, not anything here. A plan that changes
   protocol behaviour leads its implementation phases with the spec/doc update
   *before* code, and lists the docs to sweep as a deliverable in their own right.
 - **Renames/removals get a cross-component sweep.** Removing or renaming a wire
@@ -119,7 +159,7 @@ until it is unambiguous, *then* execute. These rules keep that discipline honest
 
 ## Conventions
 
-- **British English** throughout (see `STYLE_GUIDE.md`).
+- **British English** throughout.
 - **Absolute dates**, never relative ("July 2026", not "last month").
 - **Cross-link related plans.** Where a plan depends on, hands off to, or is
   bounded by another, link it — the dependency graph between plans should be

@@ -1,102 +1,128 @@
 # Dashboard Guardian Actions — Plan
 
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | refining |
+| **Created** | 1 August 2026 |
+| **Updated** | 11 November 2026 |
+| **Protocol surface** | none |
+| **Repositories** | guardian, chain |
+| **Depends on** | — |
+| **Related** | [PENDING_GUARDIAN_DEAD_CODE_SWEEP_PLAN.md](PENDING_GUARDIAN_DEAD_CODE_SWEEP_PLAN.md); `timeflareio/chain` — `DONE_DASHBOARD_AUTHENTICATION_PLAN.md`; `timeflareio/chain` — `DONE_GUARDIAN_DASHBOARD_PLAN.md` |
+| **Open questions** | 6 (§8) |
+
 *Guardian operations from the operator dashboard — availability updates, float
 deposits, the accepting-secrets toggle, and withdrawal of the unlocked float —
-mirroring exactly what `guardiand` executes from the CLI, plus two dashboard
-presentation changes (config detail behind a show/hide control; slightly
-lighter text). This is the state-changing successor the dashboard and
-authentication plans both deferred: the first slice of "runbook mode".*
+mirroring exactly what `guardianctl` executes from the CLI, plus one dashboard
+presentation change (slightly lighter text). This is the state-changing
+successor the dashboard plan deferred: the first slice of "runbook mode".*
 
-> **Status: refining — proposed 1 August 2026.** Open questions in §8 need an
-> owner ruling before this is `ready`.
->
-> **Priority**: P2 — operator UX. Was hard-gated on
-> [`DONE_DASHBOARD_AUTHENTICATION_PLAN.md`](../done/DONE_DASHBOARD_AUTHENTICATION_PLAN.md)
-> (P1) — no state-changing route ships before the dashboard is authenticated —
-> and **that gate is satisfied**: authentication merged 3 August 2026, so the
-> credential and the `Authenticator` seam this plan extends both exist.
->
-> **Origin**: owner request, 1 August 2026 ("perform operations as a guardian
-> from the dashboard … mirror exactly we would run from the guardian cli
-> tooling … availability, withdrawing [the float], any other operation the
-> guardian can action"), discharging the handoff recorded in the
-> authentication plan §8 and in
-> [`DONE_GUARDIAN_DASHBOARD_PLAN.md`](../done/DONE_GUARDIAN_DASHBOARD_PLAN.md),
-> both of which parked state-changing routes with future runbook-mode work.
->
-> **Components**:
-> - `guardian/blockchain/` — `GuardianWithdrawStake` client method (missing)
-> - `guardian/cmd/guardiand/cmd/` — new `withdraw` command (CLI parity first)
-> - `guardian/dashboard/` — `Actions` interface, `POST /api/actions/*`
->   routes, same-origin enforcement; `assets/index.html` + `assets/app.js`
->   (actions card, config show/hide, text tokens)
-> - `guardian/guardian/` — `Actions` implementation on the service; action
->   submissions recorded into the activity buffers
-> - `guardian/monitoring/` — wire the actions provider into the dashboard
->   handler, mirroring `SetDashboardSource`
-> - `guardian/config/` — `enable_dashboard_actions` field (§8 Q4)
-> - Docs — guardian README, `docs/guides/TESTING_COMMANDS.md`; update the
->   authentication plan §8 and the dashboard plan's runbook-mode references
->   to name this plan
-> - Tests — `guardian/dashboard/`, `guardian/monitoring/`,
->   `guardian/guardian/`, `guardian/blockchain/`, `guardian/cmd/`
->
-> **Protocol surface: none.** Every message this plan uses
-> (`MsgGuardianUpdate`, `MsgGuardianWithdrawStake`) already exists in
-> `proto/timeflare/secrets/v1/tx.proto`; no proto, `x/secrets/types` or
-> `docs/spec.md` change is required. No new component is introduced — every
-> change extends an existing package, binary or page.
+**Status notes**: proposed 1 August 2026. Not executable: §8 Q1 — the design of
+the dashboard's login — gates every state-changing route, and nothing about it
+has been designed or decided.
+
+**Why this priority**: operator UX.
+
+**Origin**: owner request, 1 August 2026 ("perform operations as a guardian
+from the dashboard … mirror exactly we would run from the guardian cli
+tooling … availability, withdrawing [the float], any other operation the
+guardian can action"), discharging the handoff recorded in
+`timeflareio/chain` — `DONE_GUARDIAN_DASHBOARD_PLAN.md`, which parked
+state-changing routes with future runbook-mode work.
+
+**Ruling (owner, 11 November 2026)**: the dashboard will carry state-changing
+actions, and therefore needs a login again. That reverses the position taken
+on 4 August 2026 (commit 701e60d), under which the dashboard is unauthenticated
+because it serves only what the chain already publishes. What the login looks
+like has not been designed or decided; it is §8 Q1, and no state-changing route
+ships before it is designed, ruled and built.
+
+**Components**:
+- `internal/chain/client.go` — `GuardianWithdrawStake` client method (missing)
+- `internal/cli/` — a `withdraw` verb (CLI parity first; which plan and which
+  binary own it is §8 Q2)
+- `internal/dashboard/` — the login (§8 Q1); `Actions` interface,
+  `POST /api/actions/*` routes; `assets/index.html` + `assets/app.js`
+  (actions card, text tokens, footer); the package documentation in
+  `dashboard.go` and `handler.go`, which states the unauthenticated, GET-only
+  rule
+- `internal/guardian/` — `Actions` implementation on the service; action
+  submissions recorded into the activity buffers (`observations.go`)
+- `internal/monitoring/service.go` — wire the actions provider into the
+  dashboard handler, mirroring `SetDashboardSource`
+- `internal/config/config.go` — `enable_dashboard_actions` field (§8 Q5), and
+  whatever the login needs
+- Docs — `timeflareio/chain` — `docs/guides/TESTING_COMMANDS.md` and
+  `docs/guides/CONTAINERS.md`, both of which describe the dashboard as
+  read-only and unauthenticated. This repository has no operator guide.
+- Tests — `internal/dashboard/`, `internal/monitoring/`,
+  `internal/guardian/`, `internal/chain/`, `internal/cli/`
+
+**Protocol surface: none.** Every message this plan uses
+(`MsgGuardianUpdate`, `MsgGuardianWithdrawStake`) already exists in the wire
+contract (`timeflareio/chain` — `proto/timeflare/secrets/v1/tx.proto`); no
+proto, `x/secrets/types` or spec change is required.
 
 ## 1. What "mirror the CLI exactly" means here
 
-`guardiand`'s operational verbs, and where each stands:
+The operator verbs, and where each stands:
 
 | CLI verb | Message | Dashboard action? |
 |---|---|---|
-| `update` (availability window, float deposit, accepting-secrets) | `MsgGuardianUpdate` | **Yes — §3** |
+| `guardianctl update` (availability window, float deposit, accepting-secrets) | `MsgGuardianUpdate` | **Yes — §3** |
 | *(none — gap)* withdraw unlocked float | `MsgGuardianWithdrawStake` | **Yes — §3, after §2 closes the gap** |
-| `rotate-key` | `MsgGuardianRotateKey` | **No — §4** |
-| `register` | `MsgGuardianRegister` | **No — §4** |
-| `wallet create / import / show-address`, `key backup / restore` | — (local key material) | **No — §4** |
+| `guardianctl rotate-key` | `MsgGuardianRotateKey` | **No — §4** |
+| `guardianctl register` | `MsgGuardianRegister` | **No — §4** |
+| `guardianctl wallet …`, `guardianctl key backup / restore` | — (local key material) | **No — §4** |
 | *(daemon-automated)* confirm shares, reveal share | `MsgGuardianConfirmShares`, `MsgGuardianRevealShare` | **No — §4** |
 
-"Mirror exactly" is achieved **by construction, not by imitation**: the CLI's
-`update` builds `blockchain.GuardianUpdateOptions` and calls
-`blockchain.Client.GuardianUpdate` (`cmd/update.go`, `blockchain/client.go:318`).
-The dashboard actions call **the same client methods with the same options
-structs**, so parameter semantics, validation, signing and broadcast are the
-CLI's own code path — there is no second implementation of any transaction to
-drift.
+"Mirror exactly" is achieved **by construction, not by imitation**:
+`guardianctl update` builds `chain.GuardianUpdateOptions` and calls
+`chain.Client.GuardianUpdate` (`internal/cli/update.go`,
+`internal/chain/client.go:317`). The dashboard actions call **the same client
+methods with the same options structs**, so parameter semantics, validation,
+signing and broadcast are the CLI's own code path — there is no second
+implementation of any transaction to drift.
 
 The execution venue differs in one deliberate way: the CLI constructs its own
 short-lived client, while dashboard actions run through the **running
 daemon's** client. That is an improvement, not a divergence — the daemon's
 signer serialises per-account with a mutex and tracks the sequence locally
-(`blockchain/signer.go`), so an action submitted from the dashboard cannot
+(`internal/chain/signer.go`), so an action submitted from the dashboard cannot
 race a confirmation or reveal the daemon is signing at the same moment.
 Running the CLI beside a live daemon is the path with that race today; the
 dashboard path avoids it by sharing the signer.
+
+It also changes what `guardiand` is. Today the daemon signs only the two
+protocol duties it automates, and the dashboard package's stated contract is
+that "nothing here signs". Actions make the daemon's network-facing listener a
+signing surface for `MsgGuardianUpdate` and `MsgGuardianWithdrawStake` — no key
+material is written or exported, so the two-binary split's rule is untouched,
+but the listener's exposure is no longer that of a read-only page. That is the
+reason the login is the gate.
 
 ## 2. Close the withdraw gap in the CLI first
 
 `MsgGuardianWithdrawStake` (withdraw the unlocked float; bonds for in-flight
 secrets stay locked; the guardian record persists) is reachable today only
 via `timeflared tx secrets guardian-withdraw-stake` — a binary the distroless
-guardian image does not ship, the same failure the `wallet` group was created
-to fix. `guardiand` has no withdraw verb and `blockchain.Client` has no
-method for it.
+guardian image does not ship. Neither guardian binary has a withdraw verb and
+`chain.Client` has no method for it.
 
 The dashboard cannot mirror a CLI verb that does not exist, so parity work
 comes first:
 
-- **`blockchain.Client.GuardianWithdrawStake(ctx)`** — same shape as the
-  sibling tx methods; the daemon needs it regardless of the dashboard.
-- **`guardiand withdraw`** — preview-and-confirm flow matching `update`
-  (show the current unlocked float being withdrawn, the address it pays to,
-  and that locked bonds are untouched; `--accept` to skip the prompt).
+- **`chain.Client.GuardianWithdrawStake(ctx)`** — same shape as the sibling tx
+  methods.
+- **A `withdraw` verb** — preview-and-confirm flow matching `update` (show the
+  current unlocked float being withdrawn, the address it pays to, and that
+  locked bonds are untouched).
 
-This ordering keeps the owner's framing honest: the dashboard mirrors the
-CLI, so the CLI is the reference implementation and gains the verb first.
+[PENDING_GUARDIAN_DEAD_CODE_SWEEP_PLAN.md](PENDING_GUARDIAN_DEAD_CODE_SWEEP_PLAN.md)
+adds the same verb, and its open question 1 asks which binary carries it. Who
+owns the verb is §8 Q2; this plan needs it to exist, not to be the one that
+writes it.
 
 ## 3. The actions
 
@@ -134,12 +160,17 @@ maintenance), but it submits the same message.
 **Plumbing** — a `dashboard.Actions` interface beside `Source`, implemented
 by the guardian service and wired by the start command through
 `monitoring.SetDashboardActions`, the same inversion `SetDashboardSource`
-uses (dashboard must not import guardian/guardian). Results return
-`{tx_hash}` on success and `{error}` with an honest chain-side message on
-failure. Every action submission is also recorded into the existing
-activity buffer with its own `kind`, so the Transaction outcomes panel shows
-dashboard-initiated transactions beside the daemon's own — one audit
-surface, already built.
+uses (the dashboard package must not import `internal/guardian`). Results
+return `{tx_hash}` on success and `{error}` on failure. Every action
+submission is also recorded into the existing activity buffer with its own
+`SubmissionKind`, so the Transaction outcomes panel shows dashboard-initiated
+transactions beside the daemon's own — one audit surface, already built.
+
+The error text needs care. The activity endpoint deliberately serves no error
+strings, because a chain rejection or a validation complaint quotes the value
+that failed and so carries an endpoint or a path onto the page. What an action
+may return to the person who submitted it, behind a login, is part of §8 Q1's
+coexistence question rather than something this section settles.
 
 **Confirmation UX mirrors the CLI ceremony.** The CLI never fires on the
 first keypress: it previews the exact parameters and asks. The dashboard
@@ -149,26 +180,17 @@ then the result. No action is a single click.
 
 ### Security shape
 
-- **Authentication is inherited, not re-designed.** These routes ship only
-  after the authentication plan lands and sit behind the same credential.
-  One addition: `POST /api/actions/*` requires the credential
-  **unconditionally — loopback included** (§8 Q3). The auth plan's loopback
-  exemption is argued from "there is no exposure to defend" for reads; a
-  signing surface on `127.0.0.1` is still reachable by every local process
-  and every browser tab, so the exemption does not carry over.
-- **Cross-site request forgery is live the moment Basic auth meets a POST
-  route** — the browser attaches credentials automatically, which is the
-  CSRF defence the auth plan explicitly deferred to this plan (its §8).
-  Defence in depth, all cheap: reject unless `Sec-Fetch-Site` is
-  `same-origin` or `none`; require `Content-Type: application/json`; require
-  a custom request header (e.g. `X-Timeflare-Action: 1`) that a cross-site
-  form cannot set and whose presence forces a CORS preflight the handler
-  never answers. No session state, no token store — consistent with the
-  auth plan's rejection of a session model.
+- **The login is undesigned, and it gates everything in this section.** The
+  dashboard today has no credential, no TLS and no CSRF defence, and its
+  package documentation gives the reason for each: every route is a GET that
+  serves chain-public content (`internal/dashboard/dashboard.go`,
+  `internal/dashboard/handler.go`). A route that signs has none of those
+  properties. §8 Q1 states what the login design must settle; this plan does
+  not pre-empt it.
 - **Method discipline**: every existing route stays `GET`-only; actions are
   `POST`-only. The handler tests assert both directions across the whole
-  mux, extending the auth plan's every-route table.
-- **`enable_dashboard_actions` config field** (§8 Q4) — an operator may
+  mux.
+- **`enable_dashboard_actions` config field** (§8 Q5) — an operator may
   want a strictly read-only dashboard on principle. When off, action routes
   answer `403` with a message naming the field, and the UI hides the card.
 
@@ -181,11 +203,13 @@ Stated plainly so the boundary is designed rather than accidental:
   before the backup bundle is written and confirmed. That ceremony creates
   and moves key material and a backup file on the guardian host; a browser
   cannot participate in it safely, and a rotation button that skipped the
-  ceremony would be a footgun with a 432,000-block cooldown. The rotation
-  panel keeps naming the CLI command, and gains nothing else.
-- **`register`** — a one-time bootstrap ceremony (entry fee burned, key
-  generation, first deposit) that precedes a routinely-running daemon; the
-  dashboard exists for day-to-day operation, not first contact.
+  ceremony would be a footgun with a 432,000-block cooldown. It is also a
+  `guardianctl` verb precisely so that the daemon links no code able to write
+  a key. The rotation panel keeps naming the CLI command, and gains nothing
+  else.
+- **`register`** — a one-time bootstrap ceremony (entry fee, key generation,
+  first deposit) that precedes a routinely-running daemon; the dashboard exists
+  for day-to-day operation, not first contact.
 - **Wallet and share-key management** — key material through a browser is
   out, full stop.
 - **Confirm / reveal** — protocol duties the daemon automates. A manual
@@ -201,97 +225,129 @@ invent nothing) stays untouched, and there is a single place where the page
 can sign something, which is easier to reason about and to test. The card
 holds the availability form, the deposit field, the accepting-secrets
 switch and the withdraw control, each with the preview → confirm → outcome
-flow of §3. It renders only when actions are enabled and the viewer is
-authenticated; otherwise it is absent, not disabled.
+flow of §3. It renders only when actions are enabled and the viewer is logged
+in (§8 Q1); otherwise it is absent, not disabled.
 
-The footer's "Read-only. Every action … stays in the CLI." line is rewritten
-to name what remains CLI-only (rotation, registration, key management) —
-it is currently a promise this plan breaks.
+The footer opens "This page only reads" and lists `guardianctl update` among
+the things only the CLI can do; it also says the page "carries no credential".
+Both stop being true when the first action ships, so the footer is rewritten
+in the same change to name what remains CLI-only (rotation, registration, key
+management, local configuration).
 
-## 6. Presentation changes (independent of the actions work)
+## 6. Presentation change (independent of the actions work)
 
-Two owner-requested adjustments with no dependency on authentication; they
-may be executed as the first phase, ahead of everything above.
+One owner-requested adjustment with no dependency on the login; it may be
+executed as the first phase, ahead of everything above.
 
-- **Config detail behind a show/hide control.** The Configuration panel's
-  full fields table (every setting, local vs on-chain, endpoints and key
-  paths) collapses behind a toggle styled as a slider switch, hidden by
-  default. The summary rows stay always visible: availability window,
-  blocks remaining, drift count, validation status, and every warning
-  (eligibility, validation, drift) — a hidden panel must never hide a
-  problem, and `drift_count` already surfaces disagreement without the
-  table. Hiding the detail by default also keeps endpoints and key paths —
-  the panel's most targeting-useful content — off a casually shared screen.
-  Which rows count as "detail" versus "summary" is confirmed in §8 Q1.
 - **Slightly lighter text.** The body copy sits on near-black
   (`--tf-ink: #0E0F13`), so "lighter" means brighter: raise the two derived
   text tokens slightly — `--tf-text-muted` from `rgba(244,242,236,.6)` to
   `.7`, `--tf-text-faint` from `.4` to `.48` — leaving primary text
   (`--tf-bone`) and the accent colours untouched. These tokens are copies
   whose provenance comment names
-  `mobile-client/design/timeflare-brand-1a.md` as the single place they are
-  edited, so this is either a brand change or a documented dashboard-local
-  divergence — §8 Q2 decides which; the recommendation is dashboard-local
-  (a dense monitoring page on a desktop has different legibility needs from
-  the mobile app), with the provenance comment amended to state the
-  divergence and why.
+  `timeflareio/mobile-client` — `design/timeflare-brand-1a.md` as the single
+  place they are edited, so this is either a brand change or a documented
+  dashboard-local divergence — §8 Q4 decides which.
+
+The second adjustment requested on 1 August 2026 — the configuration panel's
+detail behind a show/hide control — was written against a panel that listed
+every local setting, endpoints and key paths included. That panel is now the
+Registration panel and serves only the settings the chain also holds. Whether
+anything is left to hide is §8 Q3.
 
 ## 7. Implementation phases
 
-1. **Presentation** (§6, independent) — config show/hide control, text
-   tokens, provenance comment. Browser check on the devnet dashboard.
-2. **CLI withdraw parity** (§2) — `blockchain.Client.GuardianWithdrawStake`,
-   `guardiand withdraw` with preview/confirm, tests.
-3. **Actions plumbing** (§3) — `dashboard.Actions`, POST routes with the
-   full security shape, `SetDashboardActions`, service implementation
-   through the shared signer, activity-buffer recording,
-   `enable_dashboard_actions`. Handler tests table-driven across every
-   route: GET-only stays GET-only, POST routes refuse unauthenticated /
-   cross-site / wrong-content-type requests, disabled-actions answers
-   `403`.
-4. **Actions UI** (§5) — the card, preview → confirm → outcome flow,
-   footer rewrite, `401`/`403` rendering distinct from "unavailable".
-5. **Docs** — guardian README, `docs/guides/TESTING_COMMANDS.md`
-   (withdraw verb, action endpoints); update the authentication plan §8
-   and the dashboard plan's runbook-mode hand-off lines to name this plan.
-   No `docs/spec.md` change — no protocol behaviour changes.
-6. **Verification** — `cd guardian && make verify && make test`, `-race`
+1. **Presentation** (§6, independent) — text tokens, provenance comment.
+   Browser check on the devnet dashboard.
+2. **CLI withdraw parity** (§2) — `chain.Client.GuardianWithdrawStake` and the
+   `withdraw` verb with preview/confirm, tests; by whichever plan §8 Q2 gives
+   it to.
+3. **Login** — designed and ruled under §8 Q1, then built. This plan carries
+   no design for it.
+4. **Actions plumbing** (§3) — `dashboard.Actions`, POST routes behind the
+   login, `SetDashboardActions`, service implementation through the shared
+   signer, activity-buffer recording, `enable_dashboard_actions`. Handler
+   tests table-driven across every route: GET-only stays GET-only, POST
+   routes refuse a request without the login, disabled-actions answers `403`.
+   The package documentation in `dashboard.go` and `handler.go` is rewritten
+   to describe a listener that both serves the read-only content and signs.
+5. **Actions UI** (§5) — the card, preview → confirm → outcome flow,
+   footer rewrite.
+6. **Docs** — `timeflareio/chain` — `docs/guides/TESTING_COMMANDS.md`
+   (withdraw verb, action endpoints) and `docs/guides/CONTAINERS.md` (the
+   dashboard section). These describe a released guardian, so they change in
+   the chain repository after the guardian release that carries the actions,
+   alongside the devnet's `GUARDIAN_VERSION` pin. No spec change — no protocol
+   behaviour changes.
+7. **Verification** — `make verify && make test` in this repository, `-race`
    across the touched packages; socket-level tests as the listener suite
-   does today; then a devnet pass (claim `chain.lock` first): update
-   availability from the dashboard, toggle accepting-secrets, deposit,
-   withdraw, and confirm each lands on chain with `guardiand status` and
-   appears in the Transaction outcomes panel.
+   does today; then a devnet pass from the chain repository (claim
+   `chain.lock` first) against this working tree's build
+   (`make dev-up GUARDIAND_BIN=…`): update availability from the dashboard,
+   toggle accepting-secrets, deposit, withdraw, and confirm each lands on
+   chain with `guardianctl status` and appears in the Transaction outcomes
+   panel.
 
-Phases 3–4 land only after the authentication plan is done; phases 1–2 have
-no ordering constraint against it.
+Phases 4–5 land only after phase 3; phases 1–2 have no ordering constraint
+against it.
 
 ## 8. Open questions
 
-**Q1 — Config panel: is the summary/detail split right?** Proposed: summary
-= availability window, blocks remaining, drift count, validation status,
-and all warnings, always visible; detail = the full fields table, hidden by
-default behind the slider. *Recommendation: as proposed.* The owner asked
-for "the important part" behind the control — confirm the important part is
-the detailed table (the sensitive, verbose content) rather than the summary.
+**Q1 — What is the dashboard's login? (gating)** The dashboard will carry
+state-changing actions and so needs a login (owner, 11 November 2026); nothing
+about it is designed. No state-changing route ships before this is designed,
+ruled and built. The design must settle, at least:
 
-**Q2 — Text tokens: brand-doc change or dashboard-local divergence?**
-*Recommendation: dashboard-local*, with the provenance comment amended.
-Editing `timeflare-brand-1a.md` instead would brighten the mobile app's
-muted text too, which nobody asked for.
+- **Credential type and storage** — what an operator presents, and where and
+  in what form the daemon holds what it checks against.
+- **Transport** — the listener serves plain HTTP today; whether a credential
+  may cross it, and what the daemon terminates if not.
+- **Coexistence on one listener** — the read-only routes serve only what the
+  chain already publishes, and need no credential on that argument. Whether
+  they stay open while action routes require the login, whether logging in
+  changes what the page may show (action results and chain-side error text
+  included), and whether the content rule survives as written.
+- **CSRF** — the page has no defence because every route is a GET; that stops
+  being true with the first POST.
 
-**Q3 — Do action routes require the credential on loopback, where the
-authentication plan exempts reads?** *Recommendation: yes, unconditionally.*
-The read exemption is argued from "nothing to defend"; a signing surface on
-loopback is still reachable by any local process or browser tab. The cost
-is one password prompt for a developer on `127.0.0.1`.
+*Recommendation: none on the design itself, which this plan does not attempt;
+rule it before phases 3–5 are scheduled.* The 3 August 2026 arrangement (a
+shared password with TLS, `timeflareio/chain` —
+`DONE_DASHBOARD_AUTHENTICATION_PLAN.md`) was built and then removed on
+4 August 2026 with stated reasons, which the design should answer rather than
+repeat.
 
-**Q4 — Ship the `enable_dashboard_actions` config field?** *Recommendation:
-yes, default `true`.* Authentication already gates the surface; the field
-exists for the operator who wants a read-only dashboard as policy. Default
-`false` would make the feature invisible-by-default, which defeats the
-request.
+**Q2 — Which plan owns the `withdraw` verb?** This plan (§2) and
+[PENDING_GUARDIAN_DEAD_CODE_SWEEP_PLAN.md](PENDING_GUARDIAN_DEAD_CODE_SWEEP_PLAN.md)
+both add it. That plan's open question 1 asks which binary carries it and is
+not answered here. *Recommendation: the dead-code sweep plan owns the verb and
+the client method, since it carries the binary question and does not wait on a
+login; this plan's phase 2 becomes a dependency on it.*
 
-**Q5 — Is `rotate-key` permanently CLI-only, or does a later plan revisit
+**Q3 — Is there still configuration detail to put behind a show/hide
+control?** The request was to hide "the important part" of the configuration
+panel. The detail it meant — every local setting, endpoints, key paths — is no
+longer served at all; the Registration panel shows the on-chain record with
+its drift overlay, the availability countdown and the warnings.
+*Recommendation: drop the control, and revisit only if Q1's answer brings
+host-local settings back onto the page for a logged-in viewer.*
+
+**Q4 — Text tokens: brand-doc change or dashboard-local divergence?**
+*Recommendation: dashboard-local*, with the provenance comment amended to
+state the divergence and why (a dense monitoring page on a desktop has
+different legibility needs from the mobile app). Editing
+`timeflare-brand-1a.md` instead would brighten the mobile app's muted text
+too, which nobody asked for.
+
+**Q5 — Ship the `enable_dashboard_actions` config field, and with what
+default?** The field exists for the operator who wants a read-only dashboard
+as policy. *Recommendation: ship it; settle the default with Q1.* Default
+`true` makes the feature visible, which is what was asked for; default `false`
+keeps an upgraded guardian's listener exactly as exposed as it was. Which is
+right depends on what the login requires of an operator before any action can
+be submitted.
+
+**Q6 — Is `rotate-key` permanently CLI-only, or does a later plan revisit
 it?** *Recommendation: CLI-only until a plan can make the backup ceremony
 work without key material crossing the browser* — likely never, and the
 rotation panel already names the command. Recorded so the exclusion reads
@@ -299,14 +355,11 @@ as designed, not forgotten.
 
 ## 9. What this plan does not solve
 
+- **The login's design** — §8 Q1. This plan states that one is required and
+  what it must settle, and stops there.
 - **Registration, rotation and key management from the dashboard** — §4;
   excluded by design, not deferred by accident.
-- **The authentication model itself** — owned by
-  [`DONE_DASHBOARD_AUTHENTICATION_PLAN.md`](../done/DONE_DASHBOARD_AUTHENTICATION_PLAN.md);
-  this plan adds the CSRF defence that plan's §8 assigned to its successor,
-  and nothing else about access.
-- **`/metrics` exposure** — unchanged; still parked with the metrics
-  work-stream (authentication plan §6).
+- **`/metrics` and `/health` exposure** — unchanged by this plan.
 - **Remote/multi-guardian operation** — actions drive the one daemon
   serving the page. A fleet runbook surface is a different concern and
   would need its own argued case.

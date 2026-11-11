@@ -1,22 +1,36 @@
 # Guardian query efficiency
 
-**Priority**: P1 — load scales as guardians × secrets × transaction rate, and
+| | |
+|---|---|
+| **Priority** | P1 |
+| **Status** | refining |
+| **Created** | 1 August 2026 |
+| **Updated** | 11 November 2026 |
+| **Protocol surface** | phase 5 adds a query RPC — spec, proto, wire contract; a release train, chain first |
+| **Repositories** | guardian, chain |
+| **Depends on** | — |
+| **Related** | [PENDING_GUARDIAN_PRE_TESTNET_SWEEP_PLAN.md](PENDING_GUARDIAN_PRE_TESTNET_SWEEP_PLAN.md) |
+| **Open questions** | 3 (Open questions) |
+
+**Why this priority**: load scales as guardians × secrets × transaction rate, and
 the resulting node degradation feeds directly into reveal timing. Contains a
 growth cliff that stops synchronisation entirely.
-**Status**: refining (1 August 2026)
-**Origin**: [PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md](PENDING_GUARDIAN_PRE_TESTNET_SWEEP.md)
+**Origin**: [PENDING_GUARDIAN_PRE_TESTNET_SWEEP_PLAN.md](PENDING_GUARDIAN_PRE_TESTNET_SWEEP_PLAN.md)
 finding 7, plus the pagination-timeout and backoff-jitter items in finding 41.
-**Components**: `guardian/blockchain/client.go`; `guardian/guardian/events.go`,
-`service.go`, `cache.go`; `guardian/config/config.go`;
-`guardian/guardian/cache_test.go`, `integration_test.go`;
+**Components**: in this repository — `internal/chain/client.go`;
+`internal/guardian/events.go`, `service.go`, `cache.go`;
+`internal/config/config.go`; `internal/guardian/cache_test.go`,
+`integration_test.go`; `go.mod` (the wire-contract pin, phase 5). In
+`timeflareio/chain` (phase 5) — `docs/spec.md`,
 `proto/timeflare/secrets/v1/query.proto`, `x/secrets/types` (regenerated),
-`x/secrets/keeper/query.go`, `x/secrets/module/autocli.go`, `docs/spec.md`,
-`x/secrets/keeper/query_test.go`.
+`x/secrets/keeper/query.go`, `x/secrets/module/autocli.go`, and the keeper's
+query tests.
 
 **Protocol surface**: phase 5 adds a query RPC. Approved by the owner on
-1 August 2026, sequenced behind the measurement in phases 1-4. It lands as one
-unit — spec.md first, then proto, regenerated types, keeper and the AutoCLI
-descriptor entry.
+1 August 2026, sequenced behind the measurement in phases 1-4. It is a release
+train across two repositories (`timeflareio/chain` — `PROTOCOL_CHANGE.md`):
+the chain change lands and is tagged first, then this repository moves its
+wire-contract pin, and only then can the daemon call the new query.
 
 ---
 
@@ -24,19 +38,19 @@ descriptor entry.
 
 ### 1. Every tick and every transaction rescans the whole chain
 
-`blockchain/client.go:187-221` — `ListSecretsForGuardian` paginates the
+`internal/chain/client.go:187-221` — `ListSecretsForGuardian` paginates the
 **global** `Secrets` query at 200 per page and filters client-side. It is
 called from two places:
 
 - `UpdateFromBlockchain` on every poll tick (6 s default), and
 - `onChainEvent` → `processSecrets` on **any** transaction carrying a
   `secret_*`, `assignment_*` or `guardian_*` event, from **anyone**
-  (`events.go:101-123`, `service.go:576-582`).
+  (`internal/guardian/events.go:101-123`, `internal/guardian/service.go:576-582`).
 
 Each returned `SecretView` is expensive server-side: it carries every
 guardian's `encrypted_share` bytes and assignment records
-(`proto/timeflare/secrets/v1/query.proto:108-148`), assembled from side stores
-by `assembleSecretView`.
+(`SecretView`, `timeflareio/chain` — `proto/timeflare/secrets/v1/query.proto`),
+assembled from side stores by `assembleSecretView`.
 
 Three compounding effects:
 
@@ -47,21 +61,21 @@ Three compounding effects:
   twenty channel events and therefore twenty sequential full-store scans, on
   top of the poll doing the same.
 - **Backpressure inverts into churn.** The callbacks run synchronously in the
-  subscription select loop (`events.go:88-108`), so a multi-second rescan backs
+  subscription select loop (`internal/guardian/events.go:88-108`), so a multi-second rescan backs
   up the 16- and 64-slot channels; CometBFT drops the slow subscriber and the
   monitor reconnects — under exactly the load that caused it.
 
 This is **drift from an approved decision**, not merely an inefficiency.
-[DONE_GUARDIAN_IMPROVEMENTS_PLAN.md](../done/DONE_GUARDIAN_IMPROVEMENTS_PLAN.md)
-§7.2 accepted client-side filtering, but costed it as "one cheap query per new
-secret, network-wide" (:472). The implementation resyncs the full list per
+`timeflareio/chain` — `DONE_GUARDIAN_IMPROVEMENTS_PLAN.md` §7.2 accepted
+client-side filtering, but costed it as "one cheap query per new secret,
+network-wide". The implementation resyncs the full list per
 event. The same section logged chain-side enrichment as a later optimisation
 requiring explicit approval and a spec update (§9.5).
 
 ### 2. The pagination loop shares one timeout — a growth cliff
 
 The entire multi-page loop runs inside a single `withRetry` attempt bounded by
-one `RequestTimeout` (`client.go:190-221`, `:79`). Once the secret store is
+one `RequestTimeout` (`internal/chain/client.go:190-221`, `:79`). Once the secret store is
 large enough that paging exceeds 30 s, every resync deadline-exceeds and
 retries from page zero — so the guardian can never synchronise again. This is a
 cliff rather than a degradation: it works, then it does not, with nothing in
@@ -69,8 +83,8 @@ between.
 
 ### 3. No jitter on any backoff
 
-`withRetry`'s linear backoff (`client.go:97`) and the fixed
-`EventReconnectBackoff` (`events.go:58`) mean every guardian on the network
+`withRetry`'s linear backoff (`internal/chain/client.go:96`) and the fixed
+`EventReconnectBackoff` (`internal/guardian/events.go:58`) mean every guardian on the network
 re-polls and re-subscribes in lockstep after a node restart — a thundering herd
 against the node that just came back.
 
@@ -90,8 +104,10 @@ Replace the direct `onChainEvent` → `processSecrets` call with a dirty flag
 consumed by a single resync worker:
 
 - A qualifying event sets a flag rather than performing work.
-- One worker resyncs when the flag is set, at most once per block interval,
-  and never concurrently with itself.
+- One worker resyncs when the flag is set, at most once per coalescing window,
+  and never concurrently with itself. The window cannot be "one block": the
+  daemon carries no block cadence to convert (owner, 6 August 2026). Its length
+  is open question 2.
 - The poll tick clears the flag when it resyncs, so the two paths do not
   duplicate.
 
@@ -111,6 +127,12 @@ the daemon does not yet know about.
 So the resync becomes two paths: targeted point-reads for named secrets, and a
 full list only on the poll tick (and at startup). That is the "one cheap query
 per new secret" the approved design specified.
+
+The point-read is `ClientInterface.GetSecret` (`internal/chain/interface.go:21`),
+which has no production caller today and is therefore on
+[PENDING_GUARDIAN_DEAD_CODE_SWEEP_PLAN.md](PENDING_GUARDIAN_DEAD_CODE_SWEEP_PLAN.md)'s
+deletion list. That plan's open question 3 asks whether it goes; this phase
+depends on the answer being no.
 
 ### Phase 3 — bound pagination properly
 
@@ -132,8 +154,7 @@ assignment records the keeper already maintains, returning only the requesting
 guardian's assignments. That removes the full scan entirely and cuts each
 response to the guardian's own share bytes.
 
-This closes the gap
-[DONE_GUARDIAN_IMPROVEMENTS_PLAN.md](../done/DONE_GUARDIAN_IMPROVEMENTS_PLAN.md)
+This closes the gap `timeflareio/chain` — `DONE_GUARDIAN_IMPROVEMENTS_PLAN.md`
 §9.5 held open, and it is the reason §7.2's client-side filtering was only ever
 "start with (1)".
 
@@ -145,17 +166,37 @@ query wants pagination over a guardian's assignments) or per-event discovery
 the wrong surface is more expensive than adding it a fortnight later, because
 a query RPC is permanent once integrators depend on it.
 
-**Landing as one unit**, spec-first per the protocol-surface rule:
+**Landing as a release train**, chain first, per `timeflareio/chain` —
+`PROTOCOL_CHANGE.md`. Each step consumes a published artefact of the one
+before, and nothing in either repository's CI compiles the other, so neither
+going green shows the change has landed.
+
+In `timeflareio/chain`, as one pull request:
 
 1. `docs/spec.md` — the query's semantics and what a guardian may rely on.
 2. `proto/timeflare/secrets/v1/query.proto` — the RPC, request and response.
-3. `x/secrets/types` — regenerated code (a `types` module release, so the wire
-   contract is versioned with the change).
+3. `x/secrets/types` — regenerated code.
 4. `x/secrets/keeper/query.go` — the handler, reading the assignment index
    rather than scanning secrets.
 5. `x/secrets/module/autocli.go` — the descriptor entry the CLI/query parity
    rule requires; every query RPC must have a CLI verb.
-6. `guardian/blockchain/client.go` — `ListSecretsForGuardian` switches to it.
+
+Then the chain tags both the wire contract (`x/secrets/types/vX.Y.Z`) and a
+chain release.
+
+In this repository, after those tags exist:
+
+6. `go.mod` — the wire-contract pin moves to the new `x/secrets/types` version
+   (`make verify-pins` holds the carried `replace` block to the chain's).
+7. `internal/chain/client.go` — `ListSecretsForGuardian` switches to the new
+   query.
+
+Then a guardian release, the chain's devnet pin (`GUARDIAN_VERSION` in
+`timeflareio/chain` — `devnet/versions.env`) moves to it, the e2e suites run
+against the pinned artefacts, and the result is recorded in
+`timeflareio/chain` — `COMPATIBILITY.md`. A guardian built against the new
+contract cannot run against a chain that does not serve the query, so the
+guardian release must not precede the chain's.
 
 Two design constraints worth settling during execution rather than after:
 the response must be paginated like `Secrets` is, since a guardian at the
@@ -200,8 +241,8 @@ requesting address rather than accepting an arbitrary one as a lookup key.
 2. **What is the right coalescing window?** One block is the natural unit, but
    block time varies by network and the daemon carries no cadence to convert it —
    the fallback poll rate is sized once at `config init` from the registry, and
-   nothing else knows a duration (the chain's
-   `done/DONE_BLOCK_TIME_CONFIGURATION_PLAN.md`).
+   nothing else knows a duration (`timeflareio/chain` —
+   `DONE_BLOCK_TIME_CONFIGURATION_PLAN.md`).
    *Recommendation: coalesce on a short fixed interval (around one second).* It
    keeps the daemon's responsiveness independent of any assumed cadence, and at
    any real block time it collapses a block's worth of events into one scan.
@@ -220,6 +261,9 @@ requesting address rather than accepting an arbitrary one as a lookup key.
   cache race whose window phase 1 here narrows.
 - [PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md](PRIORITY_GUARDIAN_TX_PATH_RESILIENCE_PLAN.md)
   — shares `withRetry` and the client's dial configuration.
-- [DONE_GUARDIAN_IMPROVEMENTS_PLAN.md](../done/DONE_GUARDIAN_IMPROVEMENTS_PLAN.md)
-  §7.2 and §9.5 — the approved design this plan restores compliance with, and
-  the logged option phase 5 would exercise.
+- [PENDING_GUARDIAN_DEAD_CODE_SWEEP_PLAN.md](PENDING_GUARDIAN_DEAD_CODE_SWEEP_PLAN.md)
+  — lists `ClientInterface.GetSecret`, which phase 2 reads through, for
+  deletion; its open question 3.
+- `timeflareio/chain` — `DONE_GUARDIAN_IMPROVEMENTS_PLAN.md` §7.2 and §9.5 —
+  the approved design this plan restores compliance with, and the logged option
+  phase 5 would exercise.

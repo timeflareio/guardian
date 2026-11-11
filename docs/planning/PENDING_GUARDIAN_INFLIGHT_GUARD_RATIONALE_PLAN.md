@@ -1,16 +1,25 @@
 # Guardian in-flight guard — a rationale anchored to a constant that does not exist
 
-**Priority**: P3 — the guard's *value* is safe; only its stated justification is
-wrong. But the wrong justification names a protocol window, and the belief has
-already propagated from the code comment into a second document, which is how a
-consumer's guess about the chain becomes something a later reader trusts.
-**Status**: refining (6 August 2026) — one open question below.
-**Origin**: found while validating candidate-pool parking for the chain's
-`PENDING_E2E_SCENARIO_DETERMINISM_PLAN.md`, 6 August 2026. The chain plan records
-it as a loose end belonging to this repository.
-**Components**: `internal/guardian/inflight.go`;
-`docs/planning/PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md` (phase 7's rejected
-alternative).
+| | |
+|---|---|
+| **Priority** | P3 |
+| **Status** | refining |
+| **Created** | 6 August 2026 |
+| **Updated** | 11 November 2026 |
+| **Protocol surface** | none |
+| **Repositories** | guardian |
+| **Depends on** | — |
+| **Related** | [PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md](PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md); `timeflareio/chain` — `DONE_E2E_SCENARIO_DETERMINISM_PLAN.md` |
+| **Open questions** | 1 (Open questions) |
+
+**Why this priority**: the guard's *value* is safe; only its stated justification is
+wrong. But the wrong justification names a protocol window, and a comment is
+where a later reader looks first, which is how a consumer's guess about the
+chain becomes something that reader trusts.
+**Status notes**: one open question below.
+**Origin**: found on 6 August 2026 while validating candidate-pool parking for
+`timeflareio/chain` — `DONE_E2E_SCENARIO_DETERMINISM_PLAN.md`.
+**Components**: `internal/guardian/inflight.go`.
 
 ## The problem
 
@@ -36,12 +45,12 @@ Two things make it worth fixing rather than leaving:
    that protocol behaviour is never inferred from a consumer's code, because the
    code may be what is wrong — and here it is. A reader tuning this value would
    derive their new number from 20.
-2. **The belief has already spread.** `PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md`
-   phase 7 reasons about "a fraction of `MinCommitTimeout × block_time`" when
-   explaining why `polling_interval` is *not* bounded against a commit window.
-   That plan's conclusion is unaffected — the alternative is being rejected, not
-   adopted — but it repeats the name, so a grep for the constant now finds two
-   confirmations of something that was never true.
+2. **The belief spreads.** A plan that reasons about the commit window while
+   reading this comment inherits the name and the number:
+   [PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md](PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md)
+   phase 5, explaining why `polling_interval` is *not* bounded against a commit
+   window, has to cite the window, and cites `CommitTimeoutBlocks`. The comment
+   is the one place in this repository's code that still says otherwise.
 
 ## What the guard actually has to satisfy
 
@@ -75,11 +84,10 @@ across eight full suite runs at a measured 227ms cadence on 6 August 2026.
    window: `CommitTimeoutBlocks` = 50, the three bounds above, and the cadence
    note. Present tense, describing the code as it stands — no mention of the
    figure that was there before (git history carries that).
-2. Correct the constant's name in `PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md` phase
-   7. Its argument does not change; only the name it cites.
-3. Grep for `MinCommitTimeout` across this repository and confirm both sites are
-   the only ones, per the cross-component sweep rule.
-4. `make verify && make test`. No behaviour changes, so no new test is warranted —
+2. Grep for `MinCommitTimeout` across this repository's code and confirm
+   `inflight.go` is the only site, per the cross-component sweep rule. This
+   plan names it to describe the defect and is left alone.
+3. `make verify && make test`. No behaviour changes, so no new test is warranted —
    the value is untouched.
 
 ## What this plan does not solve
@@ -88,10 +96,11 @@ across eight full suite runs at a measured 227ms cadence on 6 August 2026.
   real headroom visible (45 of 50 blocks rather than 15 of 20), which is an
   argument for leaving the value alone, not for changing it.
 - **It does not add a bound on `polling_interval`.** That remains deliberately
-  absent for the reasons `PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md` phase 7 gives;
-  this plan only fixes the constant it names in passing.
+  absent for the reasons
+  [PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md](PENDING_GUARDIAN_CONFIG_SAFETY_PLAN.md)
+  phase 5 gives.
 - **It does not audit every other prose restatement of a protocol number in this
-  daemon.** Only the two sites naming this one. A broader sweep for hard-coded
+  daemon.** Only the comment naming this one. A broader sweep for hard-coded
   protocol facts in comments would be its own piece of work, and open question 1
   is the narrow version of that question.
 
