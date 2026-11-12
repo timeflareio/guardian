@@ -26,7 +26,7 @@ testnet — code, protocol, configuration, operations, custody and dead code.
 `Dockerfile`, `Makefile`, `make/`; and in `timeflareio/chain`:
 `x/secrets/keeper` and `x/secrets/types` (conformance references only),
 `proto/timeflare/secrets/v1`, `docs/operations.md`,
-`docs/guides/CONTAINERS.md`, `devnet/`, `docs/CHAIN_MECHANICS.md`.
+`docs/guides/CONTAINERS.md`, `devnet/`, `docs/KNOWN_RISKS.md`.
 
 ---
 
@@ -41,15 +41,15 @@ a plan the owner has approved.
 **Evidence standard applied**: every entry below cites the file that shows it,
 and where the claim is about protocol behaviour it also cites the chain-side
 code that enforces it. Candidate findings that could not be proved were dropped
-rather than hedged. Items already recorded in CHAIN_MECHANICS.md
-(`timeflareio/chain` — `docs/CHAIN_MECHANICS.md`) are excluded by
+rather than hedged. Items already recorded in KNOWN_RISKS.md
+(`timeflareio/chain` — `docs/KNOWN_RISKS.md`) are excluded by
 construction; where a finding sits *adjacent* to an accepted trade-off, the
 entry says which one and why it is not covered by it.
 
 **Reading the citations**: paths under `internal/`, `cmd/` and `make/`, and
 `Dockerfile` and `Makefile`, are in this repository. Paths under `x/`,
 `proto/` and `devnet/`, and `docs/spec.md`, `docs/operations.md`,
-`docs/CHAIN_MECHANICS.md` and `docs/guides/CONTAINERS.md`, are in
+`docs/KNOWN_RISKS.md` and `docs/guides/CONTAINERS.md`, are in
 `timeflareio/chain`, as are the `DONE_` plans named without a link. Citations
 name the file and the symbol; they carry no line numbers. The operator verbs —
 `config`, `wallet`, `key`, `register`, `update`, `rotate-key`, `status` — are
@@ -648,7 +648,7 @@ rename is atomic for visibility but not durability; and a declined rotation
 leaves the bundle containing the freshly generated private key on disk, with
 a note that it "can be deleted" and nothing deleting it.
 
-This sits beside — but is not covered by — CHAIN_MECHANICS.md Trade-off §14
+This sits beside — but is not covered by — KNOWN_RISKS.md Trade-off §14
 (rotation is hygiene, not recovery), which accepts that a *lost* key is
 unrecoverable, not that the rotation ceremony may lose it.
 
@@ -657,7 +657,7 @@ unrecoverable, not that the rotation ceremony may lose it.
 ## 20. Medium — no ceiling on the simulated gas limit
 
 `internal/chain/signer.go` declares `max(simulated, reimbursed)` with no upper bound.
-CHAIN_MECHANICS.md Trade-off §17 accepts that declared gas exceeds consumed gas and that
+KNOWN_RISKS.md Trade-off §17 accepts that declared gas exceeds consumed gas and that
 the daemon declares the larger simulated figure where a handler outgrows
 reimbursement — but §17's reasoning assumes an *honest* simulation. It does not
 accept an unbounded figure.
@@ -912,7 +912,7 @@ economics and several wire facts:
 | `MsgGuardianRevealShare` requires `share_index` | No such field exists — `tx.proto` has guardian, secret_id, decrypted_share. This is precisely the December 2024 `shareIndex` removal that CLAUDE.md's wire-rename rule was written about, unswept here |
 | Slashing is "10,000 VEIL … 5,000 reporter, 1,000 creator, 4,000 burned" | Percentage-of-bond: early reveal 40% burn / 10% creator / 50% reporter (`x/secrets/types/constants.go`) |
 | Guardians "stake 10,000 VEIL to participate", min 10,000 / max 10,000,000 | Wire field is `deposit`, may be zero; the fixed cost is the 1,000 VEIL entry fee (`x/secrets/types/constants.go`) |
-| "Expired Guardian: stake auto-returned"; withdraw "Returns full stake" | No auto-return exists; the entry fee is sunk (CHAIN_MECHANICS.md Trade-off §9) |
+| "Expired Guardian: stake auto-returned"; withdraw "Returns full stake" | No auto-return exists; the entry fee is sunk (KNOWN_RISKS.md Trade-off §9) |
 | `MsgUserRequestGuardians` takes a creator-supplied `reward`, "Minimum 1500 uveil" | Pricing is protocol-derived (`P = rate × distance × shares × bump`); the creator tunes `bump` |
 
 Separately, the file contains no operations content despite its name — guardian
@@ -949,7 +949,7 @@ Every validation failure broadcasts `MsgGuardianConfirmShares{accept:false}`
 spec.md Phase 3: "Candidates may reject, fail the float check, or simply not
 respond — progression only requires the band's floor" — and the accept-fee
 slices pay only acceptors and revealers (spec.md "Terminal-state disposition"),
-so reject gas is never reimbursed. CHAIN_MECHANICS.md Security Observation §2 confirms
+so reject gas is never reimbursed. KNOWN_RISKS.md Security Observation §2 confirms
 non-response is unpriced.
 
 A creator repeatedly distributing garbage to its draws therefore griefs every
@@ -993,7 +993,7 @@ it clamps non-positive values defensively.
 
 `MsgGuardianWithdrawStake` exists on chain
 (`proto/timeflare/secrets/v1/tx.proto`), and this repository contains
-no reference to it — neither `guardiand` nor `guardianctl` has the verb. The documented exit path — CHAIN_MECHANICS.md Trade-off §9, "a
+no reference to it — neither `guardiand` nor `guardianctl` has the verb. The documented exit path — KNOWN_RISKS.md Trade-off §9, "a
 leaving guardian drains their float" — therefore requires `timeflared`, which
 the distroless guardian image does not contain. A containerised operator who
 has served out their window cannot reclaim their float with the tooling they
@@ -1048,7 +1048,7 @@ and reaches zero at expiry — silently.
 The daemon exposes only a dashboard `BlocksRemaining`
 (`internal/guardian/dashboard_source.go`): no metric, no health signal, no optional
 auto-extend. A set-and-forget testnet guardian stops being selected and its
-operator is never told. Note this is *not* CHAIN_MECHANICS.md Trade-off §13, which
+operator is never told. Note this is *not* KNOWN_RISKS.md Trade-off §13, which
 accepts the shrinking eligible set as a protocol property; the finding is that
 the daemon gives the operator no visibility of their own decay.
 
@@ -1225,7 +1225,7 @@ stand.
   dashboard.
 - **Trade-off bookkeeping**: the unauthenticated-dashboard ruling lives only in
   code comments and a test (`internal/config/config.go`,
-  `internal/config/dashboard_config_test.go`), while CHAIN_MECHANICS.md's own
+  `internal/config/dashboard_config_test.go`), while KNOWN_RISKS.md's own
   convention is that accepted residual costs are recorded there.
   **Discharged** as a bookkeeping item: the dashboard is to carry
   state-changing actions behind a login (owner, 11 November 2026;
@@ -1315,7 +1315,7 @@ are load-bearing.
 - Inclusive window bounds match the keeper on the open side, and the
   reconstructable-still-must-reveal trap is handled (`internal/guardian/cache.go`) with a
   comment explaining what it cost to learn.
-- Gas discipline implements CHAIN_MECHANICS.md Trade-off §17 faithfully: declare
+- Gas discipline implements KNOWN_RISKS.md Trade-off §17 faithfully: declare
   `max(simulated, reimbursed)` so reimbursement equals spend where possible and
   a wide-band accept never aborts; above-floor gas price warned once at startup.
 - Restart recovery is chain-derived throughout — cache rebuilt from chain state,

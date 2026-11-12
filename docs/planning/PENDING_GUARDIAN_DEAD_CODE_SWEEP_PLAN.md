@@ -61,7 +61,7 @@ under `internal/` unless they say otherwise.
 - **No withdraw verb exists.** `MsgGuardianWithdrawStake` is on the chain
   (`timeflareio/chain` — `proto/timeflare/secrets/v1/tx.proto:46-47`); this
   repository never references it. The documented exit path —
-  `timeflareio/chain` — `docs/CHAIN_MECHANICS.md` Trade-off §9, "a leaving
+  `timeflareio/chain` — `docs/KNOWN_RISKS.md` Trade-off §9, "a leaving
   guardian drains their float" — therefore requires `timeflared`, which the
   distroless guardian image does not contain. The image ships `guardiand` and
   `guardianctl` (`Dockerfile:54-55`).
@@ -199,7 +199,7 @@ Each needs a decision rather than a deletion:
   withdrawal down to the locked total is the useful behaviour; withdrawing
   everything is the special case of having no bonds.
 
-  This does not change `timeflareio/chain` — `docs/CHAIN_MECHANICS.md`
+  This does not change `timeflareio/chain` — `docs/KNOWN_RISKS.md`
   Trade-off §9: registration stays permanent and the entry fee stays sunk. The
   command drains the float, which is exactly what §9 already describes as the
   exit.

@@ -31,7 +31,7 @@ fee split. `guardiand version` reports the build's real version (commit
 **Components**: in this repository — `Dockerfile`; `Makefile`;
 `internal/cli/register.go`, `config.go`; `internal/guardian/registration.go`;
 `internal/config/dashboard_config_test.go`. In `timeflareio/chain` —
-`docs/guides/CONTAINERS.md`; `docs/CHAIN_MECHANICS.md` (phase 3, if it
+`docs/guides/CONTAINERS.md`; `docs/KNOWN_RISKS.md` (phase 3, if it
 proceeds).
 
 ---
@@ -46,8 +46,8 @@ recorded here because the sweep initially misread them:
   break down attributes.
 - **`docs/operations.md`** — an API specification: the attribute-level
   reference for each operation's fields, validation and defaults.
-- **`docs/CHAIN_MECHANICS.md`** — the implementation internals and judgement
-  ledger.
+- **`docs/KNOWN_RISKS.md`** — the register of accepted trade-offs, open
+  concerns and defects.
 
 All three live in `timeflareio/chain`. Nothing in this plan edits `spec.md` or
 `operations.md`.
@@ -113,7 +113,7 @@ The dashboard's access position is written down in a config comment
 (`internal/config/config.go:112-124`) and in `timeflareio/chain` —
 `docs/guides/CONTAINERS.md:208-216`. Both state the position of 4 August 2026:
 the page carries no credential because it shows only what the chain already
-publishes. `timeflareio/chain` — `docs/CHAIN_MECHANICS.md`, whose convention is
+publishes. `timeflareio/chain` — `docs/KNOWN_RISKS.md`, whose convention is
 that accepted residual costs are recorded there, has no entry for it at all.
 
 The position has since been reversed: the dashboard will carry state-changing
@@ -156,10 +156,10 @@ it survived this long.
 ### Phase 3 — record the dashboard position (chain repository, pending open question 2)
 
 Add the dashboard's access position to `timeflareio/chain` —
-`docs/CHAIN_MECHANICS.md` in the established form (chose / gave up / where
+`docs/KNOWN_RISKS.md` in the established form (chose / gave up / where
 decided), and bring the config comment and the CONTAINERS.md paragraph into
 line with it. This is bookkeeping, but the convention exists so that a reader
-of CHAIN_MECHANICS.md sees the whole accepted-risk surface in one place.
+of KNOWN_RISKS.md sees the whole accepted-risk surface in one place.
 
 What is recorded depends on the login design in
 [PENDING_DASHBOARD_GUARDIAN_ACTIONS_PLAN.md](PENDING_DASHBOARD_GUARDIAN_ACTIONS_PLAN.md),

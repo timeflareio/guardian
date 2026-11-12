@@ -111,8 +111,8 @@ Three adjacent gaps in the same ceremony:
   it there — a file containing the freshly generated private key, for a key
   that was never registered.
 
-This sits beside, but is not covered by, CHAIN_MECHANICS.md Trade-off §14
-(`timeflareio/chain` — `docs/CHAIN_MECHANICS.md`) — that accepts a *lost* key as
+This sits beside, but is not covered by, KNOWN_RISKS.md Trade-off §14
+(`timeflareio/chain` — `docs/KNOWN_RISKS.md`) — that accepts a *lost* key as
 unrecoverable, not that the rotation ceremony may be what loses it.
 
 ### 3. Passphrases are accepted as command-line arguments
@@ -331,7 +331,7 @@ anything else.
 
 ## What this plan does not solve
 
-- **It does not make rotation a recovery mechanic.** CHAIN_MECHANICS.md
+- **It does not make rotation a recovery mechanic.** KNOWN_RISKS.md
   Trade-off §14 stands: a lost key still means no-reveal slashes on every
   assignment encrypted to it. This plan only stops the ceremony from being the
   cause.

@@ -88,7 +88,7 @@ in-flight bond.
 ### The secondary legs are real but self-limiting
 
 Because the HMAC key derives entirely from public inputs (`timeflareio/chain` —
-`docs/CHAIN_MECHANICS.md`, Trade-off "HMAC keys derive entirely from public
+`docs/KNOWN_RISKS.md`, Trade-off "HMAC keys derive entirely from public
 inputs"), an attacker on the channel can synthesise an assignment that looks
 entirely valid — a payload encrypted to the guardian's on-chain public key with
 a correctly computed `share_hmac` — and `processConfirmation` will decrypt it,

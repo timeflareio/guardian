@@ -161,7 +161,7 @@ Add to `Validate()`:
 - Below the consensus floor is a hard error, not a warning: every transaction
   would fail in CheckTx, and a guardian that cannot transact is a guardian that
   gets slashed. (Above the floor stays permitted and stays the operator's own
-  cost — `timeflareio/chain` — `docs/CHAIN_MECHANICS.md` Trade-off §17, with the
+  cost — `timeflareio/chain` — `docs/KNOWN_RISKS.md` Trade-off §17, with the
   existing startup warning in `warnIfPricedAboveReimbursement`,
   `internal/chain/signer.go:62`, unchanged.) See open question 4.
 

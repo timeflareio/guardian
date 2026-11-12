@@ -69,8 +69,8 @@ Every validation failure broadcasts `MsgGuardianConfirmShares{accept:false}`
 protocol outcome — spec.md Phase 3: "Candidates may reject, fail the float
 check, or simply not respond — progression only requires the band's floor" —
 and the accept-fee slices pay only acceptors and revealers, so reject gas is
-never reimbursed. CHAIN_MECHANICS.md Security Observation §2
-(`timeflareio/chain` — `docs/CHAIN_MECHANICS.md`) confirms non-response is
+never reimbursed. KNOWN_RISKS.md Security Observation §2
+(`timeflareio/chain` — `docs/KNOWN_RISKS.md`) confirms non-response is
 unpriced.
 
 A creator distributing garbage to its draw therefore griefs every selected
@@ -311,7 +311,7 @@ under `-race`; the current suite's failure to do so is why this went unnoticed.
   raise it, not to proceed.
 - **It does not stop a guardian being slashed for genuine unavailability.** If
   the key is missing at reveal time rather than at confirm time, the bond is
-  already locked and the slash follows — that is CHAIN_MECHANICS.md Trade-off §14.
+  already locked and the slash follows — that is KNOWN_RISKS.md Trade-off §14.
 - **It does not make discovery timely.** A secret found late still reveals
   late; the full-store rescan and its latency belong to
   [PENDING_GUARDIAN_QUERY_EFFICIENCY_PLAN.md](PENDING_GUARDIAN_QUERY_EFFICIENCY_PLAN.md).

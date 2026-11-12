@@ -94,8 +94,8 @@ acceptance.
 ### 3. No ceiling on the declared gas limit
 
 `submitLocked` (`signer.go:214-221`) declares `max(simulated, reimbursed)` with
-no upper bound. CHAIN_MECHANICS.md Trade-off §17 (`timeflareio/chain` —
-`docs/CHAIN_MECHANICS.md`) accepts that declared gas exceeds consumed gas and
+no upper bound. KNOWN_RISKS.md Trade-off §17 (`timeflareio/chain` —
+`docs/KNOWN_RISKS.md`) accepts that declared gas exceeds consumed gas and
 that the daemon declares the larger simulated figure where a handler outgrows
 reimbursement — but §17 reasons from an *honest* simulation. It does not accept
 an unbounded figure.
@@ -282,7 +282,7 @@ rotated to.
   The chain-id assertion catches a misconfiguration at startup; a node that
   serves the right chain-id while lagging or having forked is out of scope and
   belongs to the failover discussion.
-- **It does not change the gas economics.** CHAIN_MECHANICS.md Trade-off §17
+- **It does not change the gas economics.** KNOWN_RISKS.md Trade-off §17
   stands unchanged: declared gas still exceeds consumed gas, the excess is
   still spent, and an above-floor `gas_price` is still the operator's own cost.
   The ceiling only bounds the pathological case.
