@@ -1,7 +1,7 @@
 # Guardian Key Custody — Operator Runbook
 
 Implements Phases 1–3 of
-[docs/planning/done/DONE_GUARDIAN_KEY_CUSTODY_PLAN.md](../planning/done/DONE_GUARDIAN_KEY_CUSTODY_PLAN.md)
+`timeflareio/chain` — `DONE_GUARDIAN_KEY_CUSTODY_PLAN.md`
 plus forward-only key rotation (see [Key rotation](#key-rotation--the-hygiene-path)).
 Read this before running a guardian with real value at stake.
 
@@ -98,7 +98,7 @@ encrypted under a **backup passphrase of its own**, independent of the
 at-rest key passphrase, because the bundle travels off-host.
 
 The **24-word mnemonic** (BIP39 over the raw key bytes, per
-[CLIENT_CONVENTIONS.md §5](CLIENT_CONVENTIONS.md)) is the human-typable
+`timeflareio/typescript-sdk` — `docs/guides/CLIENT_CONVENTIONS.md` §5) is the human-typable
 fallback. The words ARE the key: write them down, never store them digitally
 in plaintext. Note the mnemonic is **per key** — `--show-mnemonic` prints the
 *current* epoch's phrase, so after a rotation the old phrase still recovers

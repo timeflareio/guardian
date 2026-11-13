@@ -22,7 +22,7 @@ merely intended.*
 > `make/go-build.mk` + `make/go-quality.mk`, `Dockerfile`,
 > `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `CLAUDE.md`,
 > `testdata/vectors/` (test-relative paths only), the chain repository's devnet
-> scripts, and [PENDING_RELEASE_STRATEGY_PLAN.md](PENDING_RELEASE_STRATEGY_PLAN.md)
+> scripts, and [PENDING_RELEASE_STRATEGY_PLAN.md](../PENDING_RELEASE_STRATEGY_PLAN.md)
 > §1 (edited as a Phase 5 deliverable — see §4).
 
 ## 1. The concern
@@ -32,7 +32,7 @@ and the commands that generate, export and rewrite key material share a package,
 a set of mutable package globals, and a printing layer wired directly to
 `os.Stdout`. Three consequences, in descending order of severity:
 
-**The command layer cannot be tested.** [`cmd/guardiand/cmd/`](../../cmd/guardiand/cmd/)
+**The command layer cannot be tested.** [`internal/cli/`](../../../internal/cli/)
 is ~3,500 lines across 13 files with zero test files. It contains the key
 generation, backup, restore and rotation-cutover orchestration — the code whose
 failure modes are "the guardian misses every reveal encrypted to that key". The
@@ -41,17 +41,17 @@ is not, and cannot be while output goes to a package-level `fmt.Printf` and
 config arrives through a mutable global.
 
 **The daemon inherits the setup path's manners.** `guardiand start` prompts for
-interactive confirmation by default ([`start.go:80`](../../cmd/guardiand/cmd/start.go#L80));
+interactive confirmation by default ([`start.go:80`](../../../internal/cli/start.go));
 `--accept` is the escape. A service under a process supervisor must never have an
 interactive gate. `cobra.OnInitialize` loads config for *every* invocation and
-calls `os.Exit(1)` on failure ([`root.go:49-61`](../../cmd/guardiand/cmd/root.go#L49-L61)),
+calls `os.Exit(1)` on failure ([`root.go:49-61`](../../../internal/cli/root.go)),
 so `guardiand version` fails on a host with no config file.
 
 **Two views of config coexist in one process.** `start`, `register`, `update`,
 `health` and `status` read the package global `cfg`; `key`, `wallet` and
 `rotate-key` call `cfgManager.Load()` and read `GetConfig()`. They can disagree,
 and in one path they demonstrably do: `runConfigInit` replaces `cfgManager`
-mid-run ([`config.go:405-413`](../../cmd/guardiand/cmd/config.go#L405-L413))
+mid-run ([`config.go:405-413`](../../../internal/cli/config.go))
 while the global `cfg` still points at what `OnInitialize` produced. This is a
 correctness hazard, not a style preference.
 
@@ -63,7 +63,7 @@ the layout move leads rather than trails — it is the mechanism, not cosmetics.
 **Why not P1.** The untested key-handling command layer is the strongest
 argument for urgency, but this plan does not *itself* fix a live defect: it makes
 the tests writable (Phase 4 writes them). No third party runs `guardiand` yet
-(see [PENDING_RELEASE_STRATEGY_PLAN.md](PENDING_RELEASE_STRATEGY_PLAN.md) §1),
+(see [PENDING_RELEASE_STRATEGY_PLAN.md](../PENDING_RELEASE_STRATEGY_PLAN.md) §1),
 so the exposure is potential rather than realised. If the owner weighs
 key-loss risk above that reasoning, P1 is defensible.
 
@@ -91,7 +91,7 @@ mislabel the half that ships in the other binary. The stutter that matters —
 an import path is ordinary Go.
 
 **One new component, approved.** Every package above is an existing package moved
-or renamed; `internal/cli/ui` is [`output.go`](../../cmd/guardiand/cmd/output.go)
+or renamed; `internal/cli/ui` is `output.go`
 plus the prompt helpers that today sit in `config.go`, relocated. The only
 genuinely new component is the second binary, `cmd/guardianctl`, approved by the
 owner on 3 August 2026 under `README.md`'s architectural-minimalism rule. The
@@ -231,7 +231,7 @@ survives a grep.
   `fatih/color`'s own detection — the daemon's startup banner goes to a
   container log, where escape codes are noise.
 - Add the stdout check from §3.2 to `verify-boundaries`.
-- Split [`config.go`](../../cmd/guardiand/cmd/config.go) (1,331 lines) into
+- Split [`config.go`](../../../internal/cli/config.go) (1,331 lines) into
   `config.go` (group, get, set, list, validate), `config_init.go` (the wizard),
   `config_doctor.go` and `config_keys.go` (`create-encryption-key`,
   `migrate-key`). `config_dashboard_password.go` stays as it is.
@@ -290,9 +290,9 @@ keyring the daemon keeps.
 
 **`register` changes shape.** It currently builds a whole `guardian.Service` —
 event monitor, cache, reveal service — to reach one method
-([`register.go:129-139`](../../cmd/guardiand/cmd/register.go#L129-L139)).
+([`register.go:129-139`](../../../internal/cli/register.go)).
 `update` already does the right thing: chain client, one call, no Service
-([`update.go:530-536`](../../cmd/guardiand/cmd/update.go#L530-L536)). Make
+([`update.go:530-536`](../../../internal/cli/update.go)). Make
 `register` mirror it by constructing `NewRegistrationManager` directly, which
 `Service.RegisterWithOptions` only delegates to anyway. Without this the split is
 nominal — the operator binary would drag the entire daemon loop behind one verb.
@@ -309,7 +309,7 @@ directly.
 **What it costs.** A second artefact set in `release.yml` plus checksums; a
 version-match obligation between the pair; a chain-repository sweep for
 `guardiand` verb invocations that must become `guardianctl`; and an edit to
-[PENDING_RELEASE_STRATEGY_PLAN.md](PENDING_RELEASE_STRATEGY_PLAN.md) §1, whose
+[PENDING_RELEASE_STRATEGY_PLAN.md](../PENDING_RELEASE_STRATEGY_PLAN.md) §1, whose
 artefact table names one binary. That edit is a deliverable of this phase.
 
 *Acceptance*: `go tool nm` on `guardiand` shows no `SealBundle`,
@@ -331,7 +331,7 @@ operators have deployed it is a migration — they would have the verb, then los
 it, and every runbook naming `guardiand key backup` would need reissuing. Before
 anyone deploys, it is just a build change.
 
-[PENDING_RELEASE_STRATEGY_PLAN.md](PENDING_RELEASE_STRATEGY_PLAN.md) already gates
+[PENDING_RELEASE_STRATEGY_PLAN.md](../PENDING_RELEASE_STRATEGY_PLAN.md) already gates
 its own third-party-facing release on §5.1 (binary signing, which it calls
 blocking), and that question is independent of layout. So both plans proceed in
 parallel: this one runs Phases 1–5 unblocked, and Phase 5 edits that plan's
@@ -389,7 +389,7 @@ which components are *clear*, not only which change:
 | `guardiand config`/`start` invocations in help text | `Makefile` (`config-help`, `status`) | 2, 5 |
 | `guardiand start --accept` | chain repository `devnet/`, compose files | between 2 and 5 |
 | `guardiand` verb invocations that become `guardianctl` | chain repository `devnet/`, compose files | 5 |
-| single-binary artefact table | [PENDING_RELEASE_STRATEGY_PLAN.md](PENDING_RELEASE_STRATEGY_PLAN.md) §1 | 5 |
+| single-binary artefact table | [PENDING_RELEASE_STRATEGY_PLAN.md](../PENDING_RELEASE_STRATEGY_PLAN.md) §1 | 5 |
 | path references | `docs/guides/GUARDIAN_KEY_CUSTODY.md` — **clear as of 3 August 2026**, re-check after Phase 3 splits files | 3 |
 
 The two chain-repository rows cannot be settled from this checkout, and they are
@@ -463,5 +463,5 @@ network-facing surface, cannot export it.
   documents those today, which is the only reason this is a gap rather than a
   breaking change. It stops being true the moment a third party is asked to run
   `guardiand`, so the guide is owed before the release
-  [PENDING_RELEASE_STRATEGY_PLAN.md](PENDING_RELEASE_STRATEGY_PLAN.md) §5.1
+  [PENDING_RELEASE_STRATEGY_PLAN.md](../PENDING_RELEASE_STRATEGY_PLAN.md) §5.1
   gates, and wants its own plan.
